@@ -13,11 +13,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from benchmarks.core import MODES, normalized_error, timing_summary, validate_dimensions
+from benchmarks.core import MODES, normalized_error, operation_count, timing_summary, validate_dimensions
 
-# Conservative starting thresholds. Review on the reference hardware before
-# treating any measurement as a valid baseline.
-ERROR_LIMITS = {"fp16": 0.02, "bf16": 0.08, "tf32": 0.02, "fp32": 0.0005}
+# Provisional screening criteria based on reference-GPU smoke measurements.
+ERROR_LIMITS = {"fp16": 1e-3, "bf16": 5e-3, "tf32": 1e-3, "fp32": 2e-5}
+TF32_ERROR_FLOOR = 2e-5
 
 
 def positive_int(value: str) -> int:
@@ -46,12 +46,19 @@ def parse_args(argv=None):
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--reference-tile", type=positive_int, default=128, help="Max rows and cols in FP64 validation subset (large matrices)")
     parser.add_argument("--full-reference-max", type=positive_int, default=2048, help="Maximum dimension for full FP64 reference")
+    parser.add_argument("--full-reference-max-flops", type=positive_int, default=2 * 2048**3,
+                        help="Maximum 2*M*N*K for full FP64 reference; dimension limit also applies")
     parser.add_argument("--output", type=Path, help="local JSON path; omit to print to stdout")
     return parser.parse_args(argv)
 
 
 def configure_mode(torch, mode: str):
     matmul = torch.backends.cuda.matmul
+    if not hasattr(matmul, "allow_fp16_accumulation"):
+        raise RuntimeError("PyTorch must support matmul.allow_fp16_accumulation; cannot enforce FP32 accumulation")
+    matmul.allow_fp16_accumulation = False
+    if matmul.allow_fp16_accumulation:
+        raise RuntimeError("FP16 accumulation unexpectedly enabled")
     # For precision experiments, prohibit reduced-precision intermediate
     # reductions where the installed PyTorch supports these flags.
     matmul.allow_fp16_reduced_precision_reduction = False
@@ -66,9 +73,15 @@ def configure_mode(torch, mode: str):
         raise RuntimeError("reduced precision reduction unexpectedly enabled")
     return {
         "fp32_precision": matmul.fp32_precision,
+        "allow_fp16_accumulation": matmul.allow_fp16_accumulation,
         "allow_fp16_reduced_precision_reduction": matmul.allow_fp16_reduced_precision_reduction,
         "allow_bf16_reduced_precision_reduction": matmul.allow_bf16_reduced_precision_reduction,
     }
+
+
+def use_full_reference(args):
+    return (max(args.m, args.n, args.k) <= args.full_reference_max
+            and operation_count(args.m, args.n, args.k) <= args.full_reference_max_flops)
 
 
 def check_accuracy(torch, a, b, out, args):
@@ -77,7 +90,7 @@ def check_accuracy(torch, a, b, out, args):
     Sampling is deterministic and covers randomly selected output rows/columns.
     For sampled checks the reported error is NOT a whole-matrix error bound.
     """
-    full = max(args.m, args.n, args.k) <= args.full_reference_max
+    full = use_full_reference(args)
     if full:
         observed = out.double()
         reference = a.double() @ b.double()
@@ -95,6 +108,8 @@ def check_accuracy(torch, a, b, out, args):
     error = normalized_error(observed, reference)
     del observed, reference
     return error, {"method": "full_fp64" if full else "sampled_fp64", "checked_output_shape": checked_shape,
+                   "reference_flops": operation_count(checked_shape[0], checked_shape[1], args.k),
+                   "full_reference_max_flops": args.full_reference_max_flops,
                    "sampling_seed": args.seed + 17 if not full else None,
                    "note": None if full else "Sampled output check; errors and NaN/Inf outside the sampled rows/columns may be missed; not a whole-matrix accuracy guarantee"}
 
@@ -104,7 +119,22 @@ def accuracy_result(torch, a, b, out, args):
     threshold = ERROR_LIMITS[args.mode]
     return {"normalized_l2_error": error if math.isfinite(error) else None,
             "threshold": threshold,
+            "precision_mode_suspect": args.mode == "tf32" and math.isfinite(error) and error < TF32_ERROR_FLOOR,
+            "error_floor": TF32_ERROR_FLOOR if args.mode == "tf32" else None,
             "passed": math.isfinite(error) and error <= threshold, **details}
+
+
+def measure_queued(torch, a, b, out, sample_count):
+    # Retain all pairs until the final stop completes. Allocate wrappers before
+    # enqueueing to reduce host-side gaps; CUDA may still initialize events lazily.
+    events = [(torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True))
+              for _ in range(sample_count)]
+    for start, stop in events:
+        start.record()
+        torch.mm(a, b, out=out)
+        stop.record()
+    events[-1][1].synchronize()
+    return [start.elapsed_time(stop) for start, stop in events]
 
 
 def run(args):
@@ -129,6 +159,8 @@ def run(args):
         "software": {"python": sys.version.split()[0], "pytorch": torch.__version__, "pytorch_cuda": torch.version.cuda},
         "precision": precision,
         "seed": args.seed,
+        "precision_mode_suspect": False,
+        "timing_method": "queued_cuda_events_per_operation_final_sync",
         "warmup": {"target_seconds": args.warmup_seconds, "operations": 0},
     }
     a = torch.randn((args.m, args.k), dtype=dtype, device=device)
@@ -141,6 +173,7 @@ def run(args):
         pre = accuracy_result(torch, a, b, out, args)
         result["accuracy_checks"] = {"pre": pre, "post": None}
         result["accuracy"] = dict(pre)
+        result["precision_mode_suspect"] = pre["precision_mode_suspect"]
         if not pre["passed"]:
             result["status"] = "accuracy_failed"
             result["failure_reason"] = "Numerical validation failed; timing skipped"
@@ -155,24 +188,21 @@ def run(args):
             if warmups % 16 == 0:
                 torch.cuda.synchronize(device)
         torch.cuda.synchronize(device)
-        samples = []
-        for _ in range(args.samples):
-            start = torch.cuda.Event(enable_timing=True)
-            stop = torch.cuda.Event(enable_timing=True)
-            start.record()
-            torch.mm(a, b, out=out)
-            stop.record()
-            stop.synchronize()
-            samples.append(start.elapsed_time(stop))
+        samples = measure_queued(torch, a, b, out, args.samples)
         # Validate the last timed output without running another GEMM into out.
         post = accuracy_result(torch, a, b, out, args)
         result["accuracy_checks"]["post"] = post
         result["accuracy"] = dict(post)
         result["accuracy"]["passed"] = pre["passed"] and post["passed"]
+        result["precision_mode_suspect"] = pre["precision_mode_suspect"] or post["precision_mode_suspect"]
+        result["accuracy"]["precision_mode_suspect"] = result["precision_mode_suspect"]
     result["status"] = "draft_validated"
     if not result["accuracy"]["passed"]:
         result["status"] = "accuracy_failed"
         result["failure_reason"] = "Post-timing numerical validation failed; timings retained for diagnostics only"
+    elif result["precision_mode_suspect"]:
+        result["status"] = "precision_mode_suspect"
+        result["investigation_reason"] = "TF32 error below screening floor; verify kernel usage before baseline inclusion"
     result["warmup"]["operations"] = warmups
     result["timings_ms"] = samples
     result["summary"] = timing_summary(samples, args.m, args.n, args.k)
@@ -191,6 +221,8 @@ def main(argv=None):
         print(f"Wrote {args.output}")
     else:
         print(serialized)
+    if result["status"] == "precision_mode_suspect":
+        return 3
     return 0 if result["status"] == "draft_validated" else 2
 
 

@@ -34,12 +34,14 @@ class TestCore(unittest.TestCase):
 
     def test_precision_settings(self):
         class Matmul:
+            allow_fp16_accumulation = True
             fp32_precision = "ieee"
             allow_fp16_reduced_precision_reduction = True
             allow_bf16_reduced_precision_reduction = True
         fake = SimpleNamespace(backends=SimpleNamespace(cuda=SimpleNamespace(matmul=Matmul())))
         self.assertEqual(configure_mode(fake, "tf32")["fp32_precision"], "tf32")
         self.assertEqual(configure_mode(fake, "fp32")["fp32_precision"], "ieee")
+        self.assertFalse(fake.backends.cuda.matmul.allow_fp16_accumulation)
         self.assertFalse(fake.backends.cuda.matmul.allow_fp16_reduced_precision_reduction)
         self.assertFalse(fake.backends.cuda.matmul.allow_bf16_reduced_precision_reduction)
 
