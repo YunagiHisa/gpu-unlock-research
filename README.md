@@ -2,7 +2,7 @@
 
 Reproducible experiments assessing [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock) on dual NVIDIA GeForce RTX 3060 GPUs.
 
-This is an **unmerged PR 1 draft**. It implements a single-device CUDA GEMM runner and CPU-only tests. The complete baseline protocol from [Issue #1](https://github.com/YunagiHisa/gpu-unlock-research/issues/1) is not implemented yet. **Do not treat generated output as final before-unlock evidence.**
+This is the initial benchmark-core implementation. It implements a single-device CUDA GEMM runner and CPU-only tests. The complete baseline protocol from [Issue #1](https://github.com/YunagiHisa/gpu-unlock-research/issues/1) is not implemented yet. **Do not treat generated output as final before-unlock evidence.**
 
 ## Running the draft
 
