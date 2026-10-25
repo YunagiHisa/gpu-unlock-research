@@ -96,7 +96,15 @@ def check_accuracy(torch, a, b, out, args):
     del observed, reference
     return error, {"method": "full_fp64" if full else "sampled_fp64", "checked_output_shape": checked_shape,
                    "sampling_seed": args.seed + 17 if not full else None,
-                   "note": None if full else "Sampled output check; not a whole-matrix accuracy guarantee"}
+                   "note": None if full else "Sampled output check; errors and NaN/Inf outside the sampled rows/columns may be missed; not a whole-matrix accuracy guarantee"}
+
+
+def accuracy_result(torch, a, b, out, args):
+    error, details = check_accuracy(torch, a, b, out, args)
+    threshold = ERROR_LIMITS[args.mode]
+    return {"normalized_l2_error": error if math.isfinite(error) else None,
+            "threshold": threshold,
+            "passed": math.isfinite(error) and error <= threshold, **details}
 
 
 def run(args):
@@ -130,12 +138,10 @@ def run(args):
     with torch.no_grad():
         torch.mm(a, b, out=out)
         torch.cuda.synchronize(device)
-        error, reference_details = check_accuracy(torch, a, b, out, args)
-        threshold = ERROR_LIMITS[args.mode]
-        passed = math.isfinite(error) and error <= threshold
-        result["accuracy"] = {"normalized_l2_error": error if math.isfinite(error) else None,
-                              "threshold": threshold, "passed": passed, **reference_details}
-        if not passed:
+        pre = accuracy_result(torch, a, b, out, args)
+        result["accuracy_checks"] = {"pre": pre, "post": None}
+        result["accuracy"] = dict(pre)
+        if not pre["passed"]:
             result["status"] = "accuracy_failed"
             result["failure_reason"] = "Numerical validation failed; timing skipped"
             return result
@@ -158,7 +164,15 @@ def run(args):
             stop.record()
             stop.synchronize()
             samples.append(start.elapsed_time(stop))
+        # Validate the last timed output without running another GEMM into out.
+        post = accuracy_result(torch, a, b, out, args)
+        result["accuracy_checks"]["post"] = post
+        result["accuracy"] = dict(post)
+        result["accuracy"]["passed"] = pre["passed"] and post["passed"]
     result["status"] = "draft_validated"
+    if not result["accuracy"]["passed"]:
+        result["status"] = "accuracy_failed"
+        result["failure_reason"] = "Post-timing numerical validation failed; timings retained for diagnostics only"
     result["warmup"]["operations"] = warmups
     result["timings_ms"] = samples
     result["summary"] = timing_summary(samples, args.m, args.n, args.k)
