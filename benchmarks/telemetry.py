@@ -143,20 +143,16 @@ class NvmlSession:
                   "pcie_width": ("nvmlDeviceGetCurrPcieLinkWidth",),
                   "pcie_max_generation": ("nvmlDeviceGetMaxPcieLinkGeneration",),
                   "pcie_max_width": ("nvmlDeviceGetMaxPcieLinkWidth",),
-                  "supported_memory_clocks_mhz": ("nvmlDeviceGetSupportedMemoryClocks",),
+                  "max_memory_clock_mhz": ("nvmlDeviceGetMaxClockInfo", 2),
+                  "max_graphics_clock_mhz": ("nvmlDeviceGetMaxClockInfo", 0),
                   "max_sm_clock_mhz": ("nvmlDeviceGetMaxClockInfo", 1)}
         result = {name: self.query(*args, scale=1000 if name.startswith("power_") else 1)
                   for name, args in fields.items()}
-        memories = result["supported_memory_clocks_mhz"]["value"]
-        result["supported_graphics_clocks_mhz"] = (
-            {str(clock): self.query("nvmlDeviceGetSupportedGraphicsClocks", clock) for clock in memories}
-            if memories is not None else unavailable("memory_clocks_unavailable"))
         result["supported_clock_event_reasons"] = self.reasons(supported=True)
         result["driver_version"] = (read_value(lambda: self.nvml.nvmlSystemGetDriverVersion())
                                     if self.initialized else unavailable(self.reason))
         result["nvml_version"] = (read_value(lambda: self.nvml.nvmlSystemGetNVMLVersion())
                                   if self.initialized else unavailable(self.reason))
-        result["visibility_note"] = "Guest-visible PCIe and persistence values may be limited by passthrough"
         return result
 
     def sample(self):
@@ -283,7 +279,6 @@ class Sampler:
         timed = [s for s in self.samples if self.timed_start is not None and self.timed_end is not None
                  and s["source"] == "poll" and self.timed_start <= s["elapsed_seconds"]
                  and s["completed_seconds"] <= self.timed_end]
-        summaries = sample_summary(self.samples)
         phases = {"idle_before": [s for s in self.samples if s["source"] == "endpoint_before"],
                   "warmup": [s for s in self.samples if s["source"] == "poll" and self.warmup_start is not None and self.warmup_end is not None
                              and self.warmup_start <= s["elapsed_seconds"] and s["completed_seconds"] <= self.warmup_end],
@@ -291,27 +286,19 @@ class Sampler:
         phase_statistics = {}
         for phase, samples in phases.items():
             phase_masks = [s["clock_event_reasons"]["value"] for s in samples if s["clock_event_reasons"]["status"] == "available"]
-            phase_statistics[phase] = {"sample_count": len(samples), "status": "available" if samples else "unavailable",
+            start, end = ((self.warmup_start, self.warmup_end) if phase == "warmup" else (self.timed_start, self.timed_end)
+                          if phase == "timed" else (samples[0]["elapsed_seconds"], samples[-1]["completed_seconds"]) if samples else (None, None))
+            phase_statistics[phase] = {"start_seconds": start, "end_seconds": end,
+                                       "sample_count": len(samples), "status": "available" if samples else "unavailable",
+                                       "reason": None if samples else "no_complete_samples_in_phase" if self.enabled else "polling_disabled",
                                        "summary": sample_summary(samples),
                                        "clock_events": {"available_samples": len(phase_masks),
                                                         "status": "available" if phase_masks else "unavailable",
                                                         "observed_samples_by_reason": {name: sum(bool(mask & bit) for mask in phase_masks) if phase_masks else None for name, bit in REASONS.items()}}}
-        masks = [s["clock_event_reasons"]["value"] for s in self.samples if s["clock_event_reasons"]["status"] == "available"]
         return {"status": "partial" if self.error else self.session.status, "error": self.error,
                 "polling_enabled": self.enabled,
                 "phases": phase_statistics,
-                "timed_coverage": {"sample_count": len(timed), "status": "available" if timed else "missing",
-                                   "reason": None if timed else ("no_complete_poll_in_timed_window" if self.enabled else "polling_disabled"),
-                                   "start_seconds": self.timed_start, "end_seconds": self.timed_end},
-                "scope": "warmup_and_queued_timing_excludes_accuracy_checks",
                 "sampling_interval_seconds": self.interval, "duration_seconds": self.duration,
-                "sample_count": len(self.samples), "samples": self.samples, "summary": summaries,
-                "summary_scope": "all_samples_including_warmup_and_endpoints",
-                "timed_summary": sample_summary(timed),
-                "timed_summary_scope": "complete_polls_inside_timed_window_only",
-                "clock_events": {"available_samples": len(masks),
-                                 "observed_samples_by_reason": {name: sum(bool(mask & bit) for mask in masks) if masks else None for name, bit in REASONS.items()},
-                                 "note": "Counts are sampled active observations, not event transitions; brief events may be missed"},
+                "sample_count": len(self.samples), "samples": self.samples,
                 "violation_counters": {"before": self.before, "after": self.after,
-                                       "delta_ns": counter_deltas(self.before, self.after),
-                                       "note": "Legacy NVML policy duration counters, not event counts; unsupported stays unavailable"}}
+                                       "delta_ns": counter_deltas(self.before, self.after)}}

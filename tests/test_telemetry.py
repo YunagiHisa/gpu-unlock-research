@@ -127,21 +127,27 @@ class TestTelemetry(unittest.TestCase):
     def test_sampler_async_observations_and_duration_counters(self):
         session, nvml = self.session()
         sampled = threading.Event()
-        original = session.sample
-        def sample():
-            if threading.current_thread().name == "nvml-telemetry":
+        sampler = Sampler(session, 0.001)
+        original = sampler._sample
+        def sample(*args):
+            original(*args)
+            if (threading.current_thread().name == "nvml-telemetry" and sampler.timed_start is not None
+                    and sampler.samples[-1]["elapsed_seconds"] >= sampler.timed_start):
                 sampled.set()
-            return original()
-        session.sample = sample
-        with Sampler(session, 0.001) as sampler:
+        sampler._sample = sample
+        with sampler:
+            sampler.begin_timed()
             self.assertTrue(sampled.wait(1), "worker did not sample asynchronously")
             nvml.counter += 10
+            sampler.end_timed()
         self.assertFalse(sampler.thread.is_alive())
         result = sampler.result()
         self.assertGreaterEqual(result["sample_count"], 3)
-        self.assertEqual(result["clock_events"]["observed_samples_by_reason"]["sw_thermal_slowdown"], result["sample_count"])
+        timed = result["phases"]["timed"]
+        self.assertGreaterEqual(timed["sample_count"], 1)
+        self.assertEqual(timed["clock_events"]["observed_samples_by_reason"]["sw_thermal_slowdown"], timed["sample_count"])
         self.assertEqual(result["violation_counters"]["delta_ns"]["thermal"]["value"], 10)
-        self.assertEqual(result["summary"]["fan_percent"]["mean"], 53)
+        self.assertEqual(timed["summary"]["fan_percent"]["mean"], 53)
         json.dumps(result, allow_nan=False)
         session.close()
 
@@ -161,7 +167,21 @@ class TestTelemetry(unittest.TestCase):
         with Sampler(session, 1) as sampler:
             pass
         result = sampler.result()
-        self.assertIsNone(result["clock_events"]["observed_samples_by_reason"]["sw_thermal_slowdown"])
-        self.assertIsNone(result["summary"]["fan_percent"]["mean"])
-        self.assertEqual(result["summary"]["fan_percent"]["unavailable_samples"], 2)
+        phase = result["phases"]["idle_before"]
+        self.assertIsNone(phase["clock_events"]["observed_samples_by_reason"]["sw_thermal_slowdown"])
+        self.assertIsNone(phase["summary"]["fan_percent"]["mean"])
+        self.assertEqual(phase["summary"]["fan_percent"]["unavailable_samples"], 1)
+        session.close()
+
+    def test_clock_metadata_uses_bounds_without_enumerating_combinations(self):
+        session, nvml = self.session()
+        nvml.nvmlDeviceGetMaxClockInfo = Mock(side_effect=lambda handle, clock: {0: 2100, 1: 2000, 2: 7500}[clock])
+        nvml.nvmlDeviceGetSupportedMemoryClocks = Mock()
+        nvml.nvmlDeviceGetSupportedGraphicsClocks = Mock()
+        metadata = session.metadata()
+        self.assertEqual(metadata["max_memory_clock_mhz"]["value"], 7500)
+        self.assertEqual(metadata["max_graphics_clock_mhz"]["value"], 2100)
+        self.assertNotIn("supported_graphics_clocks_mhz", metadata)
+        nvml.nvmlDeviceGetSupportedMemoryClocks.assert_not_called()
+        nvml.nvmlDeviceGetSupportedGraphicsClocks.assert_not_called()
         session.close()

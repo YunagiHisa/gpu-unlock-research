@@ -16,6 +16,14 @@ from benchmarks.identity import IdentityMismatch, gpu_pseudonym
 
 
 class TestIdentity(unittest.TestCase):
+    def test_key_guidance_is_on_stderr_instead_of_repeated_json_prose(self):
+        result = {"status": "draft_validated", "device": {"pseudonym": {"status": "unavailable", "value": None, "reason": "key_missing"}}}
+        output, error = io.StringIO(), io.StringIO()
+        with patch.object(gemm, "run", return_value=result), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            self.assertEqual(gemm.main(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", "fp16"]), 0)
+        self.assertEqual(json.loads(output.getvalue()), result)
+        self.assertIn("docs/telemetry-metadata.md", error.getvalue())
+
     def setup_key(self, root):
         directory = Path(root) / "config"
         directory.mkdir(mode=0o700)
@@ -57,7 +65,7 @@ class TestIdentity(unittest.TestCase):
             reader = Mock()
             result = gpu_pseudonym(reader, key)
             self.assertEqual(result["reason"], "key_missing")
-            self.assertIn("README", result["initialization_help"])
+            self.assertNotIn("initialization_help", result)
             self.assertFalse(key.exists())
             reader.assert_not_called()
 

@@ -8,7 +8,7 @@ import stat
 import uuid as uuid_module
 from pathlib import Path
 
-KEY_HELP = "Initialize a 32-byte key explicitly outside the repository; see README HMAC key setup. No key was generated."
+KEY_HELP = "Initialize a 32-byte key explicitly outside the repository; see docs/telemetry-metadata.md#identity-and-external-key-management. No key was generated."
 
 
 class IdentityMismatch(RuntimeError):
@@ -87,7 +87,7 @@ def gpu_pseudonym(uuid_reader, key_path=None):
     try:
         key, reason = _read_key(key_path)
         if key is None:
-            return {"value": None, "status": "unavailable", "reason": reason, "initialization_help": KEY_HELP}
+            return {"value": None, "status": "unavailable", "reason": reason}
         # Only the digest survives; never put the UUID or any exception text in
         # a diagnostic result, including when NVML/encoding fails.
         uuid = uuid_reader()

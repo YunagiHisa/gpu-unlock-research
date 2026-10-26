@@ -20,7 +20,7 @@ class TestAccuracy(unittest.TestCase):
         torch.cuda.get_device_properties.return_value = SimpleNamespace(name="CPU test double")
         torch.cuda.Event.return_value.elapsed_time.return_value = 1.0
         details = {"method": "full_fp64", "checked_output_shape": [2, 2],
-                   "sampling_seed": None, "note": None}
+                   "sampling_seed": None}
         args = gemm.parse_args(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", mode, "--m", "2", "--n", "2", "--k", "2", "--samples", "2"])
         with patch.dict("sys.modules", {"torch": torch}), \
              patch("benchmarks.identity._read_key", return_value=(None, "key_missing")), \
@@ -37,7 +37,7 @@ class TestAccuracy(unittest.TestCase):
     def save_result(self, result, expected_code):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "failure.json"
-            with patch.object(gemm, "run", return_value=result), contextlib.redirect_stdout(io.StringIO()):
+            with patch.object(gemm, "run", return_value=result), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 code = gemm.main(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", "fp16", "--output", str(target)])
             self.assertEqual(code, expected_code)
             saved = json.loads(target.read_text())
@@ -70,7 +70,7 @@ class TestAccuracy(unittest.TestCase):
         result = self.run_fake([0.0001, 0.0002])
         self.assertEqual(result["status"], "draft_validated")
         self.assertTrue(result["accuracy"]["passed"])
-        self.assertEqual(result["accuracy"]["normalized_l2_error"], 0.0002)
+        self.assertEqual(result["accuracy_checks"]["post"]["normalized_l2_error"], 0.0002)
         self.assertFalse(result["identity_verified"])
         self.assertIsNotNone(result["identity_verification_reason"])
         self.assertIn("physical_identity_unverified", result["baseline_ineligibility_reasons"])

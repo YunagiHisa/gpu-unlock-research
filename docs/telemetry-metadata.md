@@ -1,215 +1,278 @@
-# Telemetry, metadata, and unlock-state evidence draft
+# GEMM diagnostics and telemetry design
 
-This implements the telemetry/metadata portion of Issue #1 on main commit
-`0eda774357b8b2dd1d188fa4ae1ca2c3f99f3d26`. It never changes NVIDIA settings,
-executes gpu-unlock, or invokes sudo. CPU tests require only the standard library.
-GPU dependencies are separate in `requirements-gpu.txt`; no NVML import occurs
-when importing the benchmark modules.
+## Inputs and preparation
 
-## Collection boundaries and identity
+Each invocation measures one CUDA device, precision mode, and M/N/K shape.
+`--gpu`, `--mode {fp16,bf16,tf32,fp32}`, and
+`--requested-state {before,after,reverted}` are required. Use
+`CUDA_DEVICE_ORDER=PCI_BUS_ID` for reproducible enumeration.
 
-After selecting the CUDA device, the runner reads the current CUDA context's
-device and PCI bus ID through the CUDA driver. This respects CUDA visibility
-remapping without assuming NVML ordinals match CUDA ordinals. NVML selects a
-handle by normalized PCI ID and reads the PCI ID back to verify it. A missing
-CUDA mapping or NVML failure produces explicit unavailable fields and never
-falls back to an NVML index. The actual current-context device also supplies
-its UUID through the CUDA driver, independently compared with the NVML UUID.
-This follows CUDA_VISIBLE_DEVICES remapping through the context, not an index
-guess. Only matching PCI and UUID evidence sets `identity_verified: true`.
-No raw UUID is serialized, logged, or included in an exception.
-A contradictory PCI/UUID readback or operator PCI binding
-stops before tensor allocation with exit code 4 and a sanitized diagnostic.
-An unavailable mapping permits explicit diagnostic execution with
-`identity_verified: false` and a reason; formal preparation blocks before GEMM.
-If CUDA PCI is unavailable, operator evidence remains unbound
-and cannot confer high confidence. PR #3 always keeps `baseline_eligible: false`
-with reasons including pending PR #4 admission logic and missing evidence.
+| Option | Behavior |
+|---|---|
+| `--m`, `--n`, `--k` | Positive dimensions, each defaulting to 2048 |
+| `--samples` | Fixed count, default 30; maximum 10,000 timing pairs |
+| `--warmup-seconds` | Positive time-based warm-up, default 3 seconds |
+| `--min-timed-seconds` | Optional duration target estimated from warm-up |
+| `--seed` | Recorded deterministic input seed, default 2026 |
+| `--telemetry {on,off}` | Default on; off disables worker polling but retains endpoints |
+| `--telemetry-interval` | Positive target interval, default 0.1 seconds |
+| `--max-start-temp`, `--cooldown-timeout-s` | Optional paired Celsius limit and nonnegative wait budget; no numeric defaults |
+| `--execution-kind {formal,diagnostic}` | GEMM defaults to formal preparation; comparison defaults to diagnostic |
+| `--experiment-metadata` | Allowlisted per-GPU operator metadata file |
+| `--hmac-key-file` | Existing external pseudonym key |
+| `--output` | Exclusive local JSON destination; otherwise stdout |
 
-The sampler covers warm-up and queued timing together, excluding FP64 pre/post
-validation. Initial/final samples and violation-counter reads occur outside CUDA
-Event intervals. A worker thread polls at `--telemetry-interval` (default 0.1 s).
-Each raw sample has a monotonic elapsed time and per-field status. The interval
-is a target, not a real-time scheduling guarantee. Short runs may have only two
-endpoint samples. CPU scheduling and NVML polling can perturb performance;
-use the same collection settings in later comparisons. The worker is stopped
-and joined before NVML shutdown, including when measurement raises an exception.
+Formal preparation requires matching PCI and independent UUID evidence, a
+passed configured temperature gate, and a known zero count of other compute
+processes. Otherwise it saves a blocked diagnostic without GEMM. Diagnostic
+mode explicitly records incomplete/contended conditions. A configured temperature
+timeout blocks both modes. All results remain baseline-ineligible.
 
-Recorded telemetry includes SM clock (MHz), board power (W), GPU temperature
-(Celsius), fan percentage, and raw clock-event reason masks. Fan percentage is
-NVML's fan speed percentage, not measured RPM. Modern clock-event APIs are used
-with the legacy throttle-reason names as a compatibility fallback. Summary
-statistics include available/missing counts, min, max, and mean. Raw masks retain
-unknown bits; supported reason masks are in device metadata.
-`summary` covers all collected samples including warm-up and endpoints.
-`timed_summary` separately covers only complete timed-window polls. With zero
-valid timed samples its fields have status `unavailable`, null min/max/mean,
-and a reason. No endpoint value is substituted. The comparison runner also
-marks empty distributions unavailable and does not compute CV with fewer than
-two valid observations or with zero mean.
+Cooldown passively polls NVML only while above the configured limit. Its result
+records actual temperature, waiting time, checks, limit, budget, and outcome.
+Process counts are read before cooldown, after waiting immediately before
+measurement, and after measurement. Positive/unknown other-process counts add
+explicit ineligibility reasons. No GPU setting or service is changed.
 
-`phases` explicitly separates `idle_before`, `warmup`, `timed`, and `post`,
-each with sample counts, per-field min/median/max/mean, and sampled reason counts
-including SW Power Cap, SW Thermal Slowdown, and HW Thermal Slowdown. The
-idle/post phases are endpoint snapshots, not proof of a settled idle state.
-Warm-up and timed polls must both start and finish inside their phase; reads
-crossing boundaries remain raw but are excluded from those phase summaries.
-Empty phases have unavailable fields and null values. Zero sampled reason
-observations cannot establish absence of brief throttling.
+## Identity and external key management
 
-`observed_samples_by_reason` counts samples with a reason bit set, not distinct
-events or time under a limit. No samples available yields null, not zero. Power
-and thermal `violation_counters` retain before/after duration and reference
-timestamps plus duration differences in nanoseconds. Counter decreases or a
-reference-time decrease invalidate the delta. Unsupported counters stay null;
-zero delta only means no increase in that available counter over this scope.
-The compatibility API `nvmlDeviceGetViolationStatus` is deprecated by NVIDIA;
-a future NVML field-value implementation will be needed when it is removed.
-Neither sampled absence nor a zero counter delta proves that no brief limitation
-occurred. See the [NVIDIA device-query reference](https://docs.nvidia.com/deploy/nvml-api/latest/api/group__nvmlDeviceQueries.html).
+The CUDA driver reads the device bound to the actual current context, including
+visible-device remapping. Its PCI ID selects an NVML handle and is checked
+against NVML PCI readback. CUDA/NVML UUIDs are independently compared in memory.
+Both paths must match for verified identity. Contradictions stop before tensors
+or GEMM with exit 4; missing evidence is explicit. Raw UUIDs, exception text,
+PIDs, process names, and executable paths are not serialized.
 
-Metadata includes name, VBIOS, configured/default power limit, supported memory
-and graphics clocks, maximum SM clock, guest-visible PCIe generation/width,
-persistence mode, NVIDIA driver, Python/PyTorch/CUDA runtime, guest kernel,
-Git commit/dirty status, and CUDA device ordering. VM values describe the guest
-view and may not describe the host link. cuBLAS version is explicitly unavailable
-because there is no reliable public PyTorch query in this implementation.
-Missing GPU dependencies permit a diagnostic benchmark result with unavailable
-telemetry, which remains ineligible for a formal baseline.
-Additional metadata records OS name, CPU model, and NVML version. The preferred
-BLAS library is queried without arguments, without overriding PyTorch settings.
-Memory clock, GPU utilization percentage, and performance state are sampled
-with explicit unavailable statuses on failure. Environment recording is limited
-to canonical CUDA_DEVICE_ORDER. CUBLAS_WORKSPACE_CONFIG and
-TORCH_BLAS_PREFER_CUBLASLT values are deliberately not stored: the formal issue
-does not provide an allowlist for them. They are explicitly unavailable pending
-specification approval; no environment dump or guessed values are used.
+Pseudonyms use HMAC-SHA256 over the UUID with prefix
+`gpu-unlock-research/gpu-id/v1` followed by a null byte. The default key is
+`$XDG_CONFIG_HOME/gpu-unlock-research/hmac.key`, falling back to
+`~/.config/gpu-unlock-research/hmac.key`. It must be outside the repository,
+32 binary bytes, an owned single-link mode-600 regular file inside an owned
+mode-700 directory. Symlink key files/directories are rejected. No automatic
+key creation, replacement, or unkeyed UUID fallback occurs.
 
-## Operator input and cooling history
-
-Use one local JSON file per measured GPU with `--experiment-metadata`. The input
-is an allowlist, rejecting unknown fields at every supported object level.
-Do not put UUIDs, serial numbers, hostnames, private paths, or identifying strings
-in the anonymous labels. These labels are operator descriptions, separate from
-the stable HMAC-SHA256 GPU pseudonym. See README for external key management.
-PCI topology is retained as required by Issue #1; it is
-not a globally unique GPU identifier. Raw results remain ignored under `results/`.
-Publication still requires separate review.
-
-For GPU 1, create a local file such as the following. **Replace the illustrative
-PCI address with the actual CUDA GPU's address**; no address is inferred from
-the index. The dated maintenance record uses the operator's local calendar date
-(Asia/Tokyo). Initial-state evidence timestamps, when provided, must be UTC.
-
-```json
-{
-  "gpu_label": "gpu-b",
-  "pci_bus_id": "0000:02:00.0",
-  "cooling_state_id": "repaste-2026-10-26",
-  "cooling_history": [
-    {
-      "date": "2026-10-26",
-      "change": "thermal_paste_replaced",
-      "previous_state_id": "pre-repaste",
-      "state_id": "repaste-2026-10-26",
-      "source": "operator_report",
-      "observations_before": {
-        "max_temperature_c": 81,
-        "sw_thermal_slowdown_observed": true
-      },
-      "observations": {
-        "power_w": 167,
-        "temperature_c": 71,
-        "fan_percent": 53,
-        "thermal_counter_increase_observed": false
-      }
-    }
-  ],
-  "initial_state": {"unlock_history": "unknown"},
-  "host_environment": {"vfio_configuration": "unknown"}
-}
-```
-
-These numbers are approximate operator observations, not new NVML measurements.
-The operator reports no temperature-limit counter increase across multiple
-post-maintenance benchmarks. The record does not supply their durations or
-formal raw telemetry, and cannot establish baseline eligibility. GPU 0 was
-reported at approximately 145 W, 62 C, and fan 36%; record that separately under
-its own PCI ID and anonymous label using `change: unchanged_observation`.
-Missing cooling metadata is stored as null, never inferred from the GPU index.
-History is chronological; its last state ID must match `cooling_state_id`.
-Other accepted change kinds are `cooling_maintenance` and
-`unchanged_observation`. Before/after comparison must use matching physical GPU
-and cooling-state records, or explicitly treat cooling changes as confounders.
-Stable operator labels require operator-managed identity continuity; guest PCI
-addresses alone cannot establish continuity across passthrough reconfiguration.
-
-**No formal Before baseline has been collected.** The previous smoke tests,
-including the provisional numerical-threshold tests in README, are development
-evidence only. GPU 1's cooling state changed on 2026-10-26; do not relabel those
-tests as a formal baseline. After this implementation and the schema/review work
-are complete, collect a fresh baseline under documented cooling conditions.
-Thermal maintenance does not establish unlock history or a qualifying power cycle.
+Initialize explicitly once from the repository root. Existing files are refused
+and no secret material is printed:
 
 ```bash
-export CUDA_DEVICE_ORDER=PCI_BUS_ID
-python -m benchmarks.gemm --gpu 1 --mode fp16 --execution-kind diagnostic \
-  --requested-state before --telemetry-interval 0.1 \
-  --experiment-metadata results/local-gpu-b-metadata.json \
-  --output results/before/draft-gpu-b.json
-python -m unittest discover -s tests -v
+python - <<'PY'
+import os
+import secrets
+import stat
+from pathlib import Path
+from benchmarks.identity import default_key_path
+
+key = default_key_path()
+if key.resolve().is_relative_to(Path.cwd().resolve()):
+    raise SystemExit("Choose an external configuration directory")
+os.umask(0o077)
+key.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+info = key.parent.lstat()
+if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700 or info.st_uid != os.getuid():
+    raise SystemExit("Require an owned directory with mode 700")
+descriptor = os.open(key, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(descriptor, "wb") as output:
+    output.write(secrets.token_bytes(32))
+print("Key initialized; back it up securely")
+PY
 ```
 
-Output paths remain explicit and exclusive: existing files are never overwritten.
-Automatic timestamp/configuration filenames, a versioned JSON Schema, and formal
-baseline admission remain in the next implementation scope.
+Retain an exact encrypted offline/secret-store backup accessible only to the
+experiment owner. Restore ownership and 600/700 permissions. Never paste a key
+into command arguments, logs, JSON, tickets, or Git. Losing/replacing it prevents
+matching old pseudonyms. Missing/unsafe keys still permit nonsecret diagnostics
+with a JSON reason code and initialization guidance on stderr.
 
-## Unlock-state evidence
+## Measurement and numerical validation
 
-`requested_state` is a required operator label (`before`, `after`, `reverted`),
-without a default. GPU selection is also required. `verification_status` is `not_applicable` only for `before` with
-`initial_state_confidence: high`; every other result is `unconfirmed`.
-This runner never assigns `confirmed` or `failed`. Such decisions require a
-separate evidence review, independent of numerical validation or telemetry.
+Use fixed-seed inputs and preallocated A/B/output tensors. FP16/BF16 intend
+FP32 accumulation with rounded low-precision outputs. Disable FP16 accumulation
+and FP16/BF16 reduced-precision reductions, read settings back, and fail on
+unsupported/ineffective required controls. FP32 selects modern TF32/IEEE APIs
+without legacy mixing. FP32 IEEE is the control mode in the research protocol.
 
-Documented `unlock_history: never_attempted` with `documented_at_utc` qualifies
-for high operational confidence. For `attempted`, high confidence additionally
-requires `last_attempt_utc` and this `power_cycle` object:
+For each sample, record a start event, enqueue `torch.mm(..., out=...)`, and
+record stop on the same stream. Retain pairs and synchronize only the final
+stop before reading elapsed times. Allocation, initialization, warm-up, FP64
+checks, and telemetry summaries are outside per-operation intervals. Event
+wrappers are preallocated; CUDA may initialize them lazily. These are queued GPU
+operation times, not isolated synchronized calls or request latency.
 
-```json
-{
-  "completed_at_utc": "2026-10-25T12:00:00Z",
-  "method": "host_shutdown_ac_disconnect_power_on",
-  "host_shutdown": true,
-  "ac_disconnected": true,
-  "fresh_power_on": true
-}
-```
+FLOPs = `2*M*N*K`; TFLOPS = FLOPs / latency_seconds / 1e12. Retain raw timings,
+median, IQR, and count. Optional duration uses warm-up CUDA span/operation count,
+choosing at least --samples and at most 10,000 pairs. Record estimate, prediction,
+count/cap, actual first-start/final-stop GPU span, wall span through final sync,
+sum of per-operation times, and target outcome. No adaptive repeats/retries occur.
 
-The completion must follow the last attempt and precede or equal
-`documented_at_utc`. Timestamps must be UTC, nonfuture, and per measured GPU.
-`residual_state_suspected: true` forces low confidence. Insufficient records yield
-unknown confidence. Contradictory histories and nonboolean flags are rejected.
-Guest reboot, host restart, and undocumented shutdown do not qualify. This
-records a completed operator procedure; the runner never performs it. These
-records cannot prove the GPU's internal physical state.
+Check before warm-up and on the final timed output against FP64 products of the
+quantized inputs, using `norm(C-Cref)/max(norm(Cref),1e-30)`. Full reference needs
+both maximum dimension <= `--full-reference-max` (default 2048) and
+`2*M*N*K <= --full-reference-max-flops` (default `2*2048^3`). Otherwise a
+deterministic output tile of up to `--reference-tile` rows/columns (default 128)
+retains the full K reduction. Tile seed is input seed+17. Method, checked shape,
+reference FLOPs/budget, error, and limit are retained for each endpoint.
 
-Read-only system evidence records the presence of the exact
-`gpu_unlock.targets` boot parameter (without its value or the full command line),
-module presence, and sanitized kernel evidence. `dmesg` runs without elevation
-with a timeout. Denied access is `unavailable`. Only counts of relevant lines and
-success/failure text markers survive; raw lines, UUIDs, addresses, hostnames, and
-paths are discarded. Marker counts preserve evidence of failure but are not
-classified unlock outcomes, are not correlated to a particular GPU, and may
-reflect previous attempts or ambiguous wording. Absence of logs does not
-establish absence of attempts. Module presence and requested state do not prove
-actual unlock state.
+| Mode | Provisional normalized L2 upper limit |
+|---|---:|
+| FP16 | 1e-3 |
+| BF16 | 5e-3 |
+| TF32 | 1e-3 |
+| FP32 IEEE | 2e-5 |
 
-Marker counts alone are a partial implementation of Issue #1's sanitized
-kernel-log evidence requirement; individual entries and per-GPU chronology
-are not preserved. This limitation remains open in the conformance review.
+Equality passes; nonfinite errors fail and serialize as null. A failed pre-check
+skips timing; a failed post-check preserves timings as diagnostics. TF32 error
+below 2e-5 sets aggregate precision suspicion separately from numerical pass.
 
-Manual host fields accept only `proxmox_version`, `host_kernel_version` (version
-strings), and `vfio_configuration` (`dedicated_passthrough`, `shared`, `unknown`).
-They are operator reports, not host inspection. Full host command lines,
-configuration dumps, and arbitrary notes are deliberately not accepted.
+## Telemetry phases
+
+Record monotonic read-start/read-completion offsets, source, SM/memory clocks
+(MHz), power (W), temperature (Celsius), fan percentage, utilization percentage,
+performance state, and raw clock-event masks. Missing values retain null and
+availability/error categories, never fabricated zeros. Supported reason masks
+are device metadata; raw masks retain unknown future bits.
+
+| Phase | Included records |
+|---|---|
+| `idle_before` | Snapshot before warm-up; not a thermal-equilibrium assertion |
+| `warmup` | Polls whose start and completion both lie inside warm-up |
+| `timed` | Polls whose start and completion both lie inside queued timing |
+| `post` | Snapshot after final timing sync, before post-validation |
+
+Each phase records boundaries (seconds relative to sampler start), count,
+status/reason, per-field available/missing counts and min/median/max/mean, and
+reason-active observation counts. Empty phases/fields are unavailable with null
+statistics. Cross-boundary reads remain raw but unassigned. Whole-collection
+statistics are omitted because mixing idle/load phases is ambiguous and any
+needed aggregate is reconstructible from the retained raw samples.
+
+Violation counters retain before/after `violation_time_ns`, `reference_time_us`,
+and `delta_ns`, covering collection including warm-up. Decreases invalidate a
+delta as a reset. Clock-event getters fall back to legacy throttle-reason APIs
+when absent. On exceptions, the worker is stopped/joined before NVML shutdown.
+
+## Operator and environment metadata
+
+Input is a strict allowlist requiring anonymous gpu_label, normalized pci_bus_id,
+and cooling_state_id. Optional chronological cooling_history records date,
+change, previous/current state IDs, operator_report provenance, and constrained
+before/current numeric/boolean observations. Accepted changes are
+thermal_paste_replaced/cooling_maintenance/unchanged_observation. Its final state
+must match the current state ID. Real maintenance/measurement records belong in
+experiment storage/discussion, not fabricated design examples.
+
+Optional initial_state contains unlock_history, UTC documentation/attempt times,
+power-cycle evidence, and residual-state suspicion. Never-attempted documented
+history needs no extra cycle. Previously attempted GPUs need a completed host
+shutdown, AC disconnection, and fresh power-on after their last attempt, with
+UTC completion and documented method host_shutdown_ac_disconnect_power_on.
+Residual-state suspicion gives low confidence; insufficient history is unknown.
+Contradictions, non-UTC/future evidence timestamps, and invalid flags are rejected.
+
+For Before, high confidence maps to not_applicable; low/unknown to unconfirmed.
+After/reverted remain unconfirmed pending independent evidence review. The runner
+never infers confirmed/failed from benchmark or module state. System evidence
+records exact boot-parameter presence without value/full command line, module
+presence, and accessible kernel marker counts. Denied logs are unavailable;
+raw log lines are never output.
+
+Host input accepts only Proxmox/host-kernel version strings and VFIO category
+(dedicated_passthrough/shared/unknown). Read OS/CPU/kernel/Git metadata locally.
+Device metadata includes driver/NVML/VBIOS, power limits, guest-visible PCIe and
+persistence, and maximum supported SM/graphics/memory clocks, not all possible
+clock combinations. Preferred BLAS is a getter. Only canonical CUDA_DEVICE_ORDER
+is recorded from the environment. cuBLAS version is not collected, and other
+environment variables are entirely omitted.
+
+## Draft output layout: 0.3.0-draft
+
+The version identifies a draft layout, not validated JSON Schema. Missing timing
+data is absent when timing never ran. Output filenames are operator supplied,
+exclusive, and never overwritten.
+
+| Location | Canonical contents |
+|---|---|
+| Root | Version, UTC timestamp, status, execution/state labels, shape/mode/seed/precision, baseline flag/reason codes |
+| device / uuid_verification | CUDA PCI mapping, NVML metadata, HMAC ID, independent UUID availability/match flags |
+| environment / software | OS/CPU/kernel/Git/runtime metadata; one CUDA_DEVICE_ORDER record under allowed_environment |
+| preflight | Readiness, reason codes, actual temperature conditions/outcome |
+| compute_processes | before_cooldown, before, after total/other counts |
+| unlock_state_evidence | Operator/system evidence and binding verification; labels stay at root |
+| experiment_metadata | Cooling/host metadata; initial state stays only in unlock_state_evidence |
+| accuracy / accuracy_checks | Aggregate numerical pass / complete separate pre/post checks; suspicion is aggregated at root |
+| warmup / timed_measurement | Requested/actual warm-up and timing plan/spans/outcome |
+| timings_ms / summary | Raw operation timings and GEMM latency/TFLOPS summary |
+| telemetry | Interval, duration, total raw count, samples, phases, violation_counters |
+
+This breaks 0.2.0-draft compatibility. Use phases.timed.summary and phase
+boundaries/clock_events instead of telemetry.timed_summary/timed_coverage and
+whole-collection summary/clock_events. The reason code is
+admission_validator_not_implemented. Repeated explanation notes, unallowlisted
+environment placeholders, duplicate state/process fields, duplicated accuracy
+endpoint details, cuBLAS placeholders, and exhaustive clock lists are absent.
+Older local JSON is never automatically migrated/rewritten. Comparison accepts
+only the current draft; future Schema implementations must track version
+boundaries rather than reinterpret historical output.
+
+Exit codes: 0 numerical draft pass, 2 numerical failure, 3 precision suspicion,
+4 identity contradiction, 5 dependency/runtime unavailable, 6 blocked preparation.
+CLI errors use argparse behavior; collisions are I/O errors. Preserve failed
+attempts and investigate after two configuration failures rather than retrying
+until a passing sample is selected. No automated retry occurs.
+
+## Independent-process ON/OFF comparison
+
+Require GPU/state/mode and a new --output-dir. Comparison defaults to diagnostic
+execution; paired temperature options remain optional. Use a fixed sample count
+long enough for timed polls. Alternate pairs ON/OFF, OFF/ON, ON/OFF for the
+default three runs per condition; pass identical state/configuration and
+temperature conditions to every child.
+
+--timeout-seconds is the startup/benchmark budget (default 300 seconds). Actual
+child timeout adds the cooldown and warm-up budgets; increase the benchmark
+budget for longer workloads. Failure/invalid evidence stops without retry and
+preserves partial progress and raw child diagnostics locally.
+
+A controlled comparison requires complete independent runs, matching settings,
+verified identity, known zero other-process counts, identical passed temperature
+gates, and timed ON observations. Missing temperature gates produce an otherwise
+successful uncontrolled_diagnostic with comparison_valid=false and no ratio.
+Conflicts/incomplete runs produce invalid. Exit 0 means a completed controlled
+or uncontrolled diagnostic, not baseline admission; invalid sequences exit 5.
+
+Per-condition median/IQR and sample-standard-deviation/mean CV retain valid
+counts. CV is unavailable below two finite observations or at zero mean.
+Endpoint observations are phase-separated; ON also has timed observations,
+while OFF intentionally has no in-window polls. Results describe differences,
+never a causal or equivalence verdict.
+
+## Limitations
+
+- All output remains baseline-ineligible. Formal Schema/validation/admission,
+  automatic state/configuration filenames, baseline aggregation, CI, full
+  independent baseline coverage and variability review remain incomplete.
+  General baseline ordering and optional output hashes are unimplemented.
+- Sampled FP64 cannot guarantee whole-output/intermediate-sample correctness;
+  NaN/Inf outside the tile may be missed. Thresholds/TF32 floor are provisional
+  heuristics, not universal error bounds. Settings/kernel names do not prove
+  instructions; profiling evidence is separate. No output snapshot is allocated.
+- Kernel counts lack individual sanitized entries, chronology, per-GPU linkage,
+  and detailed unsuccessful-attempt evidence. Missing logs do not prove no
+  attempt. Labels/module presence/performance do not prove physical state.
+  Guest reboot need not reset passthrough GPUs; documented AC-disconnected host
+  cycles increase operational confidence without proving internal state.
+- Polling can perturb timing and miss brief events. Active sample counts are
+  neither distinct events nor durations. Zero observations/counter delta is not
+  absence proof. Violation counters use a deprecated API and may be unsupported.
+  NVML caching/averaging may lag: read-time alignment does not guarantee sensor
+  acquisition-time alignment. Fan percentage is not measured RPM.
+- Endpoint zero process counts cannot exclude hidden/intervening contention;
+  namespaces/MPS limit visibility and another process can arrive after preflight.
+  Services are never stopped. Diagnostic overrides do not justify formal use.
+- Start-temperature/wait conditions have no research defaults. Cooling history,
+  temperature, power, clocks, and order can confound comparisons. A controlled
+  start is not equilibrium or proof of sampler impact/absence of impact.
+- PCI addresses/VM link fields are guest topology, not globally stable identity.
+  Stable pseudonym matching requires the same protected key. Operator strings
+  need publication review. Raw JSON/logs/keys remain local by default.
+
+Getter semantics follow the [NVIDIA NVML reference](https://docs.nvidia.com/deploy/nvml-api/latest/api/group__nvmlDeviceQueries.html).

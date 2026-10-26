@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 from benchmarks.evidence import pci_id
-from benchmarks.telemetry import read_value, unavailable
+from benchmarks.telemetry import read_value
 
 
 def cuda_uuid_bytes(torch, gpu):
@@ -78,9 +78,6 @@ def environment_metadata():
         raise ValueError
     return {"os_name": os_name, "cpu_model": read_value(cpu_model),
             "allowed_environment": {"CUDA_DEVICE_ORDER": {"value": "PCI_BUS_ID", "status": "available"}
-                                    if os.environ.get("CUDA_DEVICE_ORDER") == "PCI_BUS_ID" else unavailable("unset_or_noncanonical"),
-                                    **{name: {"value": None, "status": "unavailable", "reason": "allowlist_not_defined_in_issue_1"}
-                                       for name in ("CUBLAS_WORKSPACE_CONFIG", "TORCH_BLAS_PREFER_CUBLASLT")}},
-            "guest_kernel": platform.release(), "benchmark_git": git_metadata(),
-            "cuda_device_order": "PCI_BUS_ID" if os.environ.get("CUDA_DEVICE_ORDER") == "PCI_BUS_ID" else "not_set_to_PCI_BUS_ID",
-            "cublas_version": {"value": None, "status": "unavailable", "reason": "no_reliable_public_pytorch_query"}}
+                                    if os.environ.get("CUDA_DEVICE_ORDER") == "PCI_BUS_ID" else
+                                    {"value": None, "status": "unavailable", "reason": "unset_or_noncanonical"}},
+            "guest_kernel": platform.release(), "benchmark_git": git_metadata()}

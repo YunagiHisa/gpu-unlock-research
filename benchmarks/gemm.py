@@ -16,11 +16,12 @@ from pathlib import Path
 from benchmarks.core import MAX_TIMING_SAMPLES, MODES, normalized_error, operation_count, select_samples, timing_summary, validate_dimensions
 from benchmarks.evidence import load_experiment, state_evidence
 from benchmarks.metadata import cuda_pci_bus_id, cuda_uuid_bytes, environment_metadata
-from benchmarks.telemetry import NvmlSession, Sampler
-from benchmarks.identity import IdentityMismatch
+from benchmarks.telemetry import NvmlSession, Sampler, read_value
+from benchmarks.identity import IdentityMismatch, KEY_HELP
 from benchmarks.preflight import cooldown, contention_reasons
 
 IDENTITY_MISMATCH_EXIT = 4
+SCHEMA_VERSION = "0.3.0-draft"
 
 # Provisional screening criteria based on reference-GPU smoke measurements.
 ERROR_LIMITS = {"fp16": 1e-3, "bf16": 5e-3, "tf32": 1e-3, "fp32": 2e-5}
@@ -147,8 +148,7 @@ def check_accuracy(torch, a, b, out, args):
     return error, {"method": "full_fp64" if full else "sampled_fp64", "checked_output_shape": checked_shape,
                    "reference_flops": operation_count(checked_shape[0], checked_shape[1], args.k),
                    "full_reference_max_flops": args.full_reference_max_flops,
-                   "sampling_seed": args.seed + 17 if not full else None,
-                   "note": None if full else "Sampled output check; errors and NaN/Inf outside the sampled rows/columns may be missed; not a whole-matrix accuracy guarantee"}
+                   "sampling_seed": args.seed + 17 if not full else None}
 
 
 def accuracy_result(torch, a, b, out, args):
@@ -237,7 +237,7 @@ def run(args):
             reasons.append("numerical_validation_failed")
         if result.get("precision_mode_suspect"):
             reasons.append("precision_mode_suspect")
-        if result["telemetry"].get("timed_coverage", {}).get("sample_count", 0) == 0:
+        if result["telemetry"].get("phases", {}).get("timed", {}).get("sample_count", 0) == 0:
             reasons.append("timed_telemetry_missing")
         if session.status != "available":
             reasons.append("nvml_telemetry_unavailable")
@@ -253,15 +253,14 @@ def run(args):
 
 def run_measurement(args, torch, device, dtype, precision, props, measured_pci, evidence, experiment, session, preflight):
     result = {
-        "schema_version": "0.2.0-draft",
+        "schema_version": SCHEMA_VERSION,
         "status": "unverified_draft",
-        "warning": "Telemetry/evidence draft; NOT a publishable baseline; full schema validation and independent-run review pending",
         "baseline_eligible": False,
-        "baseline_ineligibility_reasons": ["pr4_admission_validator_not_implemented", "independent_run_review_pending"],
+        "baseline_ineligibility_reasons": ["admission_validator_not_implemented", "independent_run_review_pending"],
         "identity_verified": session.identity_verified,
         "identity_verification_reason": None if session.identity_verified else session.reason,
         "uuid_verification": session.uuid_verification,
-        "preflight": preflight,
+        "preflight": {key: preflight[key] for key in ("status", "reasons", "temperature")},
         "execution_kind": args.execution_kind,
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "mode": args.mode,
@@ -269,13 +268,13 @@ def run_measurement(args, torch, device, dtype, precision, props, measured_pci, 
         "device": {"cuda_index": args.gpu, "name": props.name, "pci_bus_id": measured_pci,
                    "pci_mapping_status": "available" if measured_pci else "unavailable", "nvml": session.metadata(),
                    "pseudonym": session.pseudonym(args.hmac_key_file)},
-        "compute_processes": {"before": preflight["processes_at_start"], "after": None,
-                              "note": "value counts all compute processes; other_processes excludes this process when identifiable; endpoint zero does not prove no contention; no PIDs retained; PID namespaces and MPS may limit visibility"},
+        "compute_processes": {"before_cooldown": preflight["processes_before_cooldown"],
+                              "before": preflight["processes_at_start"], "after": None},
         "software": {"python": sys.version.split()[0], "pytorch": torch.__version__, "pytorch_cuda": torch.version.cuda},
         "environment": environment_metadata(),
         **{key: evidence[key] for key in ("requested_state", "verification_status", "initial_state_confidence")},
-        "unlock_state_evidence": evidence,
-        "experiment_metadata": experiment,
+        "unlock_state_evidence": {key: evidence[key] for key in ("operator_evidence", "system_evidence", "operator_gpu_binding_verified")},
+        "experiment_metadata": {key: value for key, value in experiment.items() if key != "initial_state"} if experiment else None,
         "telemetry": {"status": "not_collected", "reason": "pre_accuracy_check_not_passed",
                       "sampling_interval_seconds": args.telemetry_interval, "sample_count": 0},
         "precision": precision,
@@ -284,7 +283,6 @@ def run_measurement(args, torch, device, dtype, precision, props, measured_pci, 
         "timing_method": "queued_cuda_events_per_operation_final_sync",
         "warmup": {"target_seconds": args.warmup_seconds, "operations": 0},
     }
-    from benchmarks.telemetry import read_value
     result["software"]["preferred_blas_library"] = read_value(lambda: str(torch.backends.cuda.preferred_blas_library()))
     if preflight["status"] == "blocked":
         result["status"] = "preflight_blocked"
@@ -299,11 +297,11 @@ def run_measurement(args, torch, device, dtype, precision, props, measured_pci, 
         torch.cuda.synchronize(device)
         pre = accuracy_result(torch, a, b, out, args)
         result["accuracy_checks"] = {"pre": pre, "post": None}
-        result["accuracy"] = dict(pre)
+        result["accuracy"] = {"passed": pre["passed"]}
         result["precision_mode_suspect"] = pre["precision_mode_suspect"]
         if not pre["passed"]:
             result["status"] = "accuracy_failed"
-            result["failure_reason"] = "Numerical validation failed; timing skipped"
+            result["failure_reason"] = "pre_accuracy_failed"
             return result
 
         torch.cuda.synchronize(device)
@@ -335,22 +333,19 @@ def run_measurement(args, torch, device, dtype, precision, props, measured_pci, 
         result["telemetry"] = sampler.result()
         result["timed_measurement"] = {**plan, **measurement,
                                       "sum_operation_seconds": sum(samples) / 1000,
-                                      "target_met": (measurement.get("gpu_span_seconds", 0) >= args.min_timed_seconds) if args.min_timed_seconds is not None else None,
-                                      "estimate_note": "warm-up GPU span per operation includes queue gaps and synchronization; target is an estimate, not adaptive remeasurement"}
+                                      "target_met": (measurement.get("gpu_span_seconds", 0) >= args.min_timed_seconds) if args.min_timed_seconds is not None else None}
         # Validate the last timed output without running another GEMM into out.
         post = accuracy_result(torch, a, b, out, args)
         result["accuracy_checks"]["post"] = post
-        result["accuracy"] = dict(post)
         result["accuracy"]["passed"] = pre["passed"] and post["passed"]
         result["precision_mode_suspect"] = pre["precision_mode_suspect"] or post["precision_mode_suspect"]
-        result["accuracy"]["precision_mode_suspect"] = result["precision_mode_suspect"]
     result["status"] = "draft_validated"
     if not result["accuracy"]["passed"]:
         result["status"] = "accuracy_failed"
-        result["failure_reason"] = "Post-timing numerical validation failed; timings retained for diagnostics only"
+        result["failure_reason"] = "post_accuracy_failed"
     elif result["precision_mode_suspect"]:
         result["status"] = "precision_mode_suspect"
-        result["investigation_reason"] = "TF32 error below screening floor; verify kernel usage before baseline inclusion"
+        result["investigation_reason"] = "tf32_below_screening_floor"
     result["warmup"]["operations"] = warmups
     result["timings_ms"] = samples
     result["summary"] = timing_summary(samples, args.m, args.n, args.k)
@@ -363,12 +358,15 @@ def main(argv=None):
         result = run(args)
     except (IdentityMismatch, ImportError, RuntimeError) as exc:
         mismatch = isinstance(exc, IdentityMismatch)
-        result = {"schema_version": "0.2.0-draft", "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        result = {"schema_version": SCHEMA_VERSION, "timestamp_utc": datetime.now(timezone.utc).isoformat(),
                   "status": "identity_mismatch" if mismatch else "measurement_unavailable",
                   "identity_verified": False, "identity_verification_reason": "physical_gpu_identity_mismatch" if mismatch else "gpu_dependency_or_measurement_unavailable",
                   "baseline_eligible": False,
-                  "baseline_ineligibility_reasons": ["pr4_admission_validator_not_implemented", "physical_gpu_identity_mismatch" if mismatch else "measurement_unavailable"],
+                  "baseline_ineligibility_reasons": ["admission_validator_not_implemented", "physical_gpu_identity_mismatch" if mismatch else "measurement_unavailable"],
                   "requested_state": args.requested_state, "verification_status": "unconfirmed", "initial_state_confidence": "unknown"}
+    pseudonym = result.get("device", {}).get("pseudonym", {})
+    if pseudonym.get("reason", "").startswith("key_"):
+        print(KEY_HELP, file=sys.stderr)
     serialized = json.dumps(result, indent=2, allow_nan=False)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

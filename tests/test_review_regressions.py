@@ -176,8 +176,9 @@ class TestReviewRegressions(unittest.TestCase):
             metadata = environment_metadata()
         self.assertNotIn("/private/secret", json.dumps(metadata))
         self.assertNotIn("private-token", json.dumps(metadata))
-        self.assertEqual(metadata["allowed_environment"]["CUBLAS_WORKSPACE_CONFIG"]["status"], "unavailable")
-        self.assertEqual(metadata["allowed_environment"]["CUBLAS_WORKSPACE_CONFIG"]["reason"], "allowlist_not_defined_in_issue_1")
+        self.assertEqual(set(metadata["allowed_environment"]), {"CUDA_DEVICE_ORDER"})
+        self.assertNotIn("cuda_device_order", metadata)
+        self.assertNotIn("cublas_version", metadata)
 
     def test_sampler_endpoint_failure_is_sanitized_and_worker_stops(self):
         session = NvmlSession(None)

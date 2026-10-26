@@ -148,5 +148,4 @@ def state_evidence(requested_state, experiment, measured_pci):
     return {"requested_state": requested_state, "initial_state_confidence": confidence,
             "verification_status": "not_applicable" if requested_state == "before" and confidence == "high" else "unconfirmed",
             "operator_evidence": operator, "system_evidence": kernel_evidence(),
-            "operator_gpu_binding_verified": experiment is not None and measured_pci is not None,
-            "note": "Operator records are operational evidence, not proof of internal GPU state; separate review required"}
+            "operator_gpu_binding_verified": experiment is not None and measured_pci is not None}

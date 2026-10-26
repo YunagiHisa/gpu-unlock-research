@@ -108,3 +108,19 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(plan["gpu_span_seconds"], 0.1)
         self.assertFalse(plan["target_met"])
         self.assertIn("requested_timed_duration_not_met", result["baseline_ineligibility_reasons"])
+
+    def test_current_draft_uses_canonical_evidence_and_phase_statistics(self):
+        result, _ = self.run_fake([0.0001, 0.0001])
+        self.assertEqual(result["schema_version"], "0.3.0-draft")
+        self.assertIn("admission_validator_not_implemented", result["baseline_ineligibility_reasons"])
+        self.assertNotIn("pr4_admission_validator_not_implemented", result["baseline_ineligibility_reasons"])
+        for key in ("timed_summary", "timed_coverage", "summary", "clock_events"):
+            self.assertNotIn(key, result["telemetry"])
+        self.assertIn("summary", result["telemetry"]["phases"]["timed"])
+        self.assertEqual(set(result["accuracy"]), {"passed"})
+        self.assertNotIn("note", result["compute_processes"])
+        self.assertNotIn("estimate_note", result["timed_measurement"])
+        self.assertNotIn("processes_at_start", result["preflight"])
+        for key in ("requested_state", "verification_status", "initial_state_confidence"):
+            self.assertIn(key, result)
+            self.assertNotIn(key, result["unlock_state_evidence"])

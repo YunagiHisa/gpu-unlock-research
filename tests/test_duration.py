@@ -53,10 +53,10 @@ class TestDuration(unittest.TestCase):
             sampler.end_timed()
         result = sampler.result()
         self.assertEqual(result["sample_count"], 2)
-        self.assertEqual(result["timed_coverage"]["sample_count"], 0)
-        self.assertEqual(result["timed_coverage"]["status"], "missing")
-        self.assertEqual(result["summary"]["temperature_c"]["mean"], 71)
-        for field in result["timed_summary"].values():
+        self.assertEqual(result["phases"]["timed"]["sample_count"], 0)
+        self.assertEqual(result["phases"]["timed"]["status"], "unavailable")
+        self.assertEqual(result["phases"]["idle_before"]["summary"]["temperature_c"]["mean"], 71)
+        for field in result["phases"]["timed"]["summary"].values():
             self.assertEqual(field["status"], "unavailable")
             self.assertEqual(field["available_samples"], 0)
             self.assertIsNone(field["mean"])
@@ -66,8 +66,8 @@ class TestDuration(unittest.TestCase):
             self.assertIsNone(sampler.thread)
             sampler.begin_timed()
             sampler.end_timed()
-        self.assertEqual(sampler.result()["timed_coverage"]["reason"], "polling_disabled")
-        self.assertEqual(sampler.result()["timed_summary"]["power_w"]["status"], "unavailable")
+        self.assertEqual(sampler.result()["phases"]["timed"]["reason"], "polling_disabled")
+        self.assertEqual(sampler.result()["phases"]["timed"]["summary"]["power_w"]["status"], "unavailable")
 
     def test_process_counts_do_not_retain_process_objects(self):
         nvml = Mock()
