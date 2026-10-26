@@ -15,11 +15,14 @@ python -m pip install -r requirements-gpu.txt
 python -m unittest discover -s tests -v
 ```
 
-## Minimal run
+## Minimal runs
 
 Select an unused GPU and explicit state. Set `START_TEMP_C` and `WAIT_SECONDS`
 to the intended diagnostic conditions; neither has a default. Never enable
 gpu-unlock or stop an existing service merely to run diagnostics.
+
+A short smoke test checks execution and accuracy; it may contain no timed NVML
+polls:
 
 ```bash
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
@@ -30,10 +33,20 @@ python -m benchmarks.gemm --gpu 0 --requested-state before \
   --output results/diagnostics/run.json
 ```
 
-`formal` enforces preparation gates, not baseline admission. Small runs may
-contain no timed telemetry polls. Existing output files are never overwritten.
-See the design for longer runs, ON/OFF comparison, external HMAC key setup,
-operator metadata, and the versioned JSON layout.
+For NVML telemetry collection, use a longer duration-targeted diagnostic:
+
+```bash
+python -m benchmarks.gemm --gpu 0 --requested-state before \
+  --execution-kind formal --mode fp16 --m 4096 --n 4096 --k 4096 \
+  --min-timed-seconds 2 --telemetry on \
+  --max-start-temp "$START_TEMP_C" --cooldown-timeout-s "$WAIT_SECONDS" \
+  --output results/diagnostics/telemetry.json
+```
+
+`formal` enforces preparation gates, not baseline admission. Duration targets
+are estimates; shortfalls return a failure while preserving evidence. Existing
+output files are never overwritten. See the design for ON/OFF comparison,
+external HMAC key setup, operator metadata, and the draft JSON layout.
 
 ## Limitations and references
 

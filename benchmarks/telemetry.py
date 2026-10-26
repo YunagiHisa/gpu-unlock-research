@@ -226,6 +226,7 @@ class Sampler:
         self.enabled = enabled
         self.timed_start = self.timed_end = None
         self.warmup_start = self.warmup_end = None
+        self.calibration_start = self.calibration_end = None
 
     def _sample(self, source="poll"):
         start = time.perf_counter() - self.started
@@ -250,6 +251,12 @@ class Sampler:
 
     def end_warmup(self):
         self.warmup_end = time.perf_counter() - self.started
+
+    def begin_calibration(self):
+        self.calibration_start = time.perf_counter() - self.started
+
+    def end_calibration(self):
+        self.calibration_end = time.perf_counter() - self.started
 
     def _worker(self):
         try:
@@ -282,11 +289,13 @@ class Sampler:
         phases = {"idle_before": [s for s in self.samples if s["source"] == "endpoint_before"],
                   "warmup": [s for s in self.samples if s["source"] == "poll" and self.warmup_start is not None and self.warmup_end is not None
                              and self.warmup_start <= s["elapsed_seconds"] and s["completed_seconds"] <= self.warmup_end],
+                  "calibration": [s for s in self.samples if s["source"] == "poll" and self.calibration_start is not None and self.calibration_end is not None
+                                  and self.calibration_start <= s["elapsed_seconds"] and s["completed_seconds"] <= self.calibration_end],
                   "timed": timed, "post": [s for s in self.samples if s["source"] == "endpoint_after"]}
         phase_statistics = {}
         for phase, samples in phases.items():
             phase_masks = [s["clock_event_reasons"]["value"] for s in samples if s["clock_event_reasons"]["status"] == "available"]
-            start, end = ((self.warmup_start, self.warmup_end) if phase == "warmup" else (self.timed_start, self.timed_end)
+            start, end = ((self.calibration_start, self.calibration_end) if phase == "calibration" else (self.warmup_start, self.warmup_end) if phase == "warmup" else (self.timed_start, self.timed_end)
                           if phase == "timed" else (samples[0]["elapsed_seconds"], samples[-1]["completed_seconds"]) if samples else (None, None))
             phase_statistics[phase] = {"start_seconds": start, "end_seconds": end,
                                        "sample_count": len(samples), "status": "available" if samples else "unavailable",

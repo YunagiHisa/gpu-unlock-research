@@ -12,7 +12,7 @@ Each invocation measures one CUDA device, precision mode, and M/N/K shape.
 | `--m`, `--n`, `--k` | Positive dimensions, each defaulting to 2048 |
 | `--samples` | Fixed count, default 30; maximum 10,000 timing pairs |
 | `--warmup-seconds` | Positive time-based warm-up, default 3 seconds |
-| `--min-timed-seconds` | Optional duration target estimated from warm-up |
+| `--min-timed-seconds` | Optional duration target estimated by post-warm-up calibration |
 | `--seed` | Recorded deterministic input seed, default 2026 |
 | `--telemetry {on,off}` | Default on; off disables worker polling but retains endpoints |
 | `--telemetry-interval` | Positive target interval, default 0.1 seconds |
@@ -99,10 +99,31 @@ wrappers are preallocated; CUDA may initialize them lazily. These are queued GPU
 operation times, not isolated synchronized calls or request latency.
 
 FLOPs = `2*M*N*K`; TFLOPS = FLOPs / latency_seconds / 1e12. Retain raw timings,
-median, IQR, and count. Optional duration uses warm-up CUDA span/operation count,
-choosing at least --samples and at most 10,000 pairs. Record estimate, prediction,
-count/cap, actual first-start/final-stop GPU span, wall span through final sync,
-sum of per-operation times, and target outcome. No adaptive repeats/retries occur.
+median, IQR, and count.
+
+When a duration target is requested, follow warm-up with one 32-operation CUDA
+Event probe using the same queued-event/final-sync method, without intermediate
+synchronization. Divide its first-start/final-stop GPU span by 32 to estimate
+operation time. The probe has separate events, a `calibration` telemetry phase,
+and evidence under `timed_measurement.calibration`; its operations never enter
+`timings_ms` or the GEMM summary. Without a duration target, no probe runs.
+Probe runtime failures or invalid estimates skip timed GEMM and return exit 5
+with a sanitized reason. Identity, preparation, warm-up, pre-check, process
+counts, collected telemetry, and calibration availability remain in the JSON;
+unexecuted timings are absent and `target_met` is null.
+
+Choose at least `--samples` and at most 10,000 timing pairs. Record estimate,
+predicted duration, selected count/cap, actual GPU span, wall span through final
+sync, sum of operation times, and `target_met`. The target requires actual GPU
+span >= requested duration, without tolerance. A shortfall preserves diagnostics
+but sets `duration_target_not_met` and exit 7. No retries or result selection occur.
+
+Warm-up retains its span/operation estimate for comparison, enqueue wall time,
+periodic synchronization count/wall time, and final synchronization wall time.
+Synchronization waits include GPU work, so their duration is not pure overhead.
+Probe span versus summed operation times exposes aggregate inter-operation gaps,
+not their individual cause. Phase clock observations provide context; limitations
+on prediction and attribution are listed below.
 
 Check before warm-up and on the final timed output against FP64 products of the
 quantized inputs, using `norm(C-Cref)/max(norm(Cref),1e-30)`. Full reference needs
@@ -135,6 +156,7 @@ are device metadata; raw masks retain unknown future bits.
 |---|---|
 | `idle_before` | Snapshot before warm-up; not a thermal-equilibrium assertion |
 | `warmup` | Polls whose start and completion both lie inside warm-up |
+| `calibration` | Complete polls inside the optional duration-estimation probe |
 | `timed` | Polls whose start and completion both lie inside queued timing |
 | `post` | Snapshot after final timing sync, before post-validation |
 
@@ -157,8 +179,7 @@ and cooling_state_id. Optional chronological cooling_history records date,
 change, previous/current state IDs, operator_report provenance, and constrained
 before/current numeric/boolean observations. Accepted changes are
 thermal_paste_replaced/cooling_maintenance/unchanged_observation. Its final state
-must match the current state ID. Real maintenance/measurement records belong in
-experiment storage/discussion, not fabricated design examples.
+must match the current state ID.
 
 Optional initial_state contains unlock_history, UTC documentation/attempt times,
 power-cycle evidence, and residual-state suspicion. Never-attempted documented
@@ -199,25 +220,19 @@ exclusive, and never overwritten.
 | unlock_state_evidence | Operator/system evidence and binding verification; labels stay at root |
 | experiment_metadata | Cooling/host metadata; initial state stays only in unlock_state_evidence |
 | accuracy / accuracy_checks | Aggregate numerical pass / complete separate pre/post checks; suspicion is aggregated at root |
-| warmup / timed_measurement | Requested/actual warm-up and timing plan/spans/outcome |
+| warmup / timed_measurement | Warm-up diagnostics and separate calibration, timing plan/spans/outcome |
 | timings_ms / summary | Raw operation timings and GEMM latency/TFLOPS summary |
 | telemetry | Interval, duration, total raw count, samples, phases, violation_counters |
 
-This breaks 0.2.0-draft compatibility. Use phases.timed.summary and phase
-boundaries/clock_events instead of telemetry.timed_summary/timed_coverage and
-whole-collection summary/clock_events. The reason code is
-admission_validator_not_implemented. Repeated explanation notes, unallowlisted
-environment placeholders, duplicate state/process fields, duplicated accuracy
-endpoint details, cuBLAS placeholders, and exhaustive clock lists are absent.
-Older local JSON is never automatically migrated/rewritten. Comparison accepts
-only the current draft; future Schema implementations must track version
-boundaries rather than reinterpret historical output.
+0.3.0-draft is incompatible with 0.2.0-draft. Older local JSON is never
+automatically converted or overwritten. Comparison accepts only the current
+draft. Calibration evidence and its phase are optional additions to this draft;
+duration shortfalls now return failure status and exit 7.
 
-Exit codes: 0 numerical draft pass, 2 numerical failure, 3 precision suspicion,
+Exit codes: 0 draft pass including any requested duration target, 2 numerical failure, 3 precision suspicion,
 4 identity contradiction, 5 dependency/runtime unavailable, 6 blocked preparation.
-CLI errors use argparse behavior; collisions are I/O errors. Preserve failed
-attempts and investigate after two configuration failures rather than retrying
-until a passing sample is selected. No automated retry occurs.
+7 indicates a duration target shortfall. CLI errors use argparse behavior;
+output collisions are I/O errors.
 
 ## Independent-process ON/OFF comparison
 
@@ -251,6 +266,8 @@ never a causal or equivalence verdict.
   automatic state/configuration filenames, baseline aggregation, CI, full
   independent baseline coverage and variability review remain incomplete.
   General baseline ordering and optional output hashes are unimplemented.
+- Preserve failed attempts and exclude them from valid counts. After two
+  validation failures of the same configuration, investigate before resuming.
 - Sampled FP64 cannot guarantee whole-output/intermediate-sample correctness;
   NaN/Inf outside the tile may be missed. Thresholds/TF32 floor are provisional
   heuristics, not universal error bounds. Settings/kernel names do not prove
@@ -271,6 +288,11 @@ never a causal or equivalence verdict.
 - Start-temperature/wait conditions have no research defaults. Cooling history,
   temperature, power, clocks, and order can confound comparisons. A controlled
   start is not equilibrium or proof of sampler impact/absence of impact.
+- A short calibration cannot guarantee later duration: host enqueue spacing,
+  lazy event initialization, synchronization gaps, and GPU clock/load changes
+  can differ between warm-up, probe, and timing. NVML observations alone cannot
+  identify their separate causal contributions. The fixed probe adds GPU work;
+  its thermal effect and the 10,000-pair cap can also affect target attainment.
 - PCI addresses/VM link fields are guest topology, not globally stable identity.
   Stable pseudonym matching requires the same protected key. Operator strings
   need publication review. Raw JSON/logs/keys remain local by default.

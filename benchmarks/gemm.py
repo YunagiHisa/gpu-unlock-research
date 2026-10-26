@@ -22,6 +22,7 @@ from benchmarks.preflight import cooldown, contention_reasons
 
 IDENTITY_MISMATCH_EXIT = 4
 SCHEMA_VERSION = "0.3.0-draft"
+CALIBRATION_SAMPLES = 32
 
 # Provisional screening criteria based on reference-GPU smoke measurements.
 ERROR_LIMITS = {"fp16": 1e-3, "bf16": 5e-3, "tf32": 1e-3, "fp32": 2e-5}
@@ -71,7 +72,7 @@ def parse_args(argv=None):
     parser.add_argument("--k", type=positive_int, default=2048)
     parser.add_argument("--warmup-seconds", type=positive_float, default=3.0)
     parser.add_argument("--samples", type=positive_int, default=30)
-    parser.add_argument("--min-timed-seconds", type=positive_float, help="optional duration target estimated from warm-up; not a guaranteed minimum")
+    parser.add_argument("--min-timed-seconds", type=positive_float, help="optional duration target estimated by post-warmup calibration; not a guaranteed minimum")
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--reference-tile", type=positive_int, default=128, help="Max rows and cols in FP64 validation subset (large matrices)")
     parser.add_argument("--full-reference-max", type=positive_int, default=2048, help="Maximum dimension for full FP64 reference")
@@ -185,6 +186,26 @@ def measure_queued(torch, a, b, out, sample_count, measurement=None, sampler=Non
     return [start.elapsed_time(stop) for start, stop in events]
 
 
+def calibrate_queued(torch, a, b, out):
+    """One fixed queued probe; its events and timings are separate from measurement."""
+    measurement = {}
+    timings = measure_queued(torch, a, b, out, CALIBRATION_SAMPLES, measurement=measurement)
+    span = measurement["gpu_span_seconds"]
+    estimated_ms = span / CALIBRATION_SAMPLES * 1000
+    valid = (math.isfinite(estimated_ms) and estimated_ms > 0
+             and math.isfinite(MAX_TIMING_SAMPLES * estimated_ms)
+             and len(timings) == CALIBRATION_SAMPLES
+             and all(math.isfinite(t) and t > 0 for t in timings))
+    total_seconds = sum(t / 1000 for t in timings)
+    valid = valid and math.isfinite(total_seconds)
+    return {"method": "post_warmup_queued_cuda_events_final_sync", "operations": CALIBRATION_SAMPLES,
+            "status": "available" if valid else "unavailable",
+            "reason": None if valid else "calibration_invalid_estimate",
+            **{name: value if math.isfinite(value) else None for name, value in measurement.items()},
+            "sum_operation_seconds": total_seconds if math.isfinite(total_seconds) else None,
+            "estimated_gemm_ms": estimated_ms if valid else None}
+
+
 def run(args):
     # Validate operator input before importing GPU dependencies or allocating.
     experiment = load_experiment(args.experiment_metadata)
@@ -245,6 +266,8 @@ def run(args):
             reasons.append("compute_process_evidence_unavailable")
         if result.get("timed_measurement", {}).get("target_met") is False:
             reasons.append("requested_timed_duration_not_met")
+        if result.get("failure_reason", "").startswith("calibration_"):
+            reasons.append(result["failure_reason"])
         result["baseline_ineligibility_reasons"] = list(dict.fromkeys(reasons))
         return result
     finally:
@@ -313,27 +336,62 @@ def run_measurement(args, torch, device, dtype, precision, props, measured_pci, 
                 warmup_events[0].record()
             start_warmup = time.monotonic()
             warmups = 0
+            enqueue_seconds = sync_seconds = 0.0
+            periodic_syncs = 0
             while time.monotonic() - start_warmup < args.warmup_seconds:
+                enqueue_start = time.perf_counter()
                 torch.mm(a, b, out=out)
+                enqueue_seconds += time.perf_counter() - enqueue_start
                 warmups += 1
                 if warmups % 16 == 0:
+                    sync_start = time.perf_counter()
                     torch.cuda.synchronize(device)
+                    sync_seconds += time.perf_counter() - sync_start
+                    periodic_syncs += 1
+            sync_start = time.perf_counter()
             torch.cuda.synchronize(device)
+            final_sync_seconds = time.perf_counter() - sync_start
             estimated_ms = None
             if warmup_events is not None:
                 warmup_events[1].record()
                 warmup_events[1].synchronize()
                 warmup_ms = warmup_events[0].elapsed_time(warmup_events[1])
                 if warmups and math.isfinite(warmup_ms) and warmup_ms > 0:
-                    estimated_ms = warmup_ms / warmups
-            plan = select_samples(args.samples, args.min_timed_seconds, estimated_ms)
+                    result["warmup"].update({"gpu_span_seconds": warmup_ms / 1000,
+                                            "span_per_operation_ms": warmup_ms / warmups})
+            result["warmup"].update({"enqueue_wall_seconds": enqueue_seconds,
+                                     "periodic_sync_count": periodic_syncs,
+                                     "periodic_sync_wall_seconds": sync_seconds,
+                                     "final_sync_wall_seconds": final_sync_seconds})
             sampler.end_warmup()
+            result["warmup"]["operations"] = warmups
+            calibration = None
+            if args.min_timed_seconds is not None:
+                sampler.begin_calibration()
+                try:
+                    calibration = calibrate_queued(torch, a, b, out)
+                except RuntimeError:
+                    calibration = {"method": "post_warmup_queued_cuda_events_final_sync",
+                                   "operations": CALIBRATION_SAMPLES, "status": "unavailable",
+                                   "reason": "calibration_failed", "estimated_gemm_ms": None}
+                finally:
+                    sampler.end_calibration()
+                estimated_ms = calibration["estimated_gemm_ms"]
+            plan = select_samples(args.samples, args.min_timed_seconds, estimated_ms)
             measurement = {}
-            samples = measure_queued(torch, a, b, out, plan["selected_samples"], measurement=measurement, sampler=sampler)
+            samples = None
+            if calibration is None or estimated_ms is not None:
+                samples = measure_queued(torch, a, b, out, plan["selected_samples"], measurement=measurement, sampler=sampler)
         result["telemetry"] = sampler.result()
         result["timed_measurement"] = {**plan, **measurement,
-                                      "sum_operation_seconds": sum(samples) / 1000,
-                                      "target_met": (measurement.get("gpu_span_seconds", 0) >= args.min_timed_seconds) if args.min_timed_seconds is not None else None}
+                                      "sum_operation_seconds": sum(samples) / 1000 if samples is not None else None,
+                                      "target_met": (measurement["gpu_span_seconds"] >= args.min_timed_seconds) if samples is not None and args.min_timed_seconds is not None else None}
+        if calibration is not None:
+            result["timed_measurement"]["calibration"] = calibration
+            if estimated_ms is None:
+                result["status"] = "measurement_unavailable"
+                result["failure_reason"] = calibration["reason"]
+                return result
         # Validate the last timed output without running another GEMM into out.
         post = accuracy_result(torch, a, b, out, args)
         result["accuracy_checks"]["post"] = post
@@ -346,6 +404,9 @@ def run_measurement(args, torch, device, dtype, precision, props, measured_pci, 
     elif result["precision_mode_suspect"]:
         result["status"] = "precision_mode_suspect"
         result["investigation_reason"] = "tf32_below_screening_floor"
+    elif result["timed_measurement"]["target_met"] is False:
+        result["status"] = "duration_target_not_met"
+        result["failure_reason"] = "requested_timed_duration_not_met"
     result["warmup"]["operations"] = warmups
     result["timings_ms"] = samples
     result["summary"] = timing_summary(samples, args.m, args.n, args.k)
@@ -384,6 +445,8 @@ def main(argv=None):
         return 5
     if result["status"] == "preflight_blocked":
         return 6
+    if result["status"] == "duration_target_not_met":
+        return 7
     return 0 if result["status"] == "draft_validated" else 2
 
 

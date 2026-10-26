@@ -1,6 +1,7 @@
+import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from benchmarks import gemm
 from benchmarks.core import MAX_TIMING_SAMPLES, select_samples
@@ -8,6 +9,57 @@ from benchmarks.telemetry import NvmlSession, Sampler
 
 
 class TestDuration(unittest.TestCase):
+    def test_invalid_calibration_preserves_json_safe_evidence(self):
+        for span, duration in ((float("nan"), 1), (float("inf"), 1), (0, 1), (-1, 1), (1e305, 1), (1e-323, 1),
+                               (0.032, float("nan")), (0.032, 0), (0.032, float("inf"))):
+            with self.subTest(span=span, duration=duration):
+                def measure(*args, **kwargs):
+                    kwargs["measurement"].update(gpu_span_seconds=span, queued_wall_seconds=0.04)
+                    return [duration] * 32
+                with patch.object(gemm, "measure_queued", side_effect=measure) as measured:
+                    result = gemm.calibrate_queued(None, None, None, None)
+                measured.assert_called_once()
+                self.assertEqual(result["status"], "unavailable")
+                self.assertEqual(result["reason"], "calibration_invalid_estimate")
+                self.assertIsNone(result["estimated_gemm_ms"])
+                self.assertEqual(result["queued_wall_seconds"], 0.04)
+                json.dumps(result, allow_nan=False)
+
+    def test_calibration_queues_once_and_uses_span_not_operation_sum(self):
+        events, calls = [], []
+        class Event:
+            def __init__(self, **kwargs):
+                self.index = len(events)
+                events.append(self)
+            def record(self):
+                calls.append(("record", self.index))
+            def synchronize(self):
+                calls.append(("sync", self.index))
+            def elapsed_time(self, other):
+                return 64 if self.index == 0 and other.index == 63 else 1
+        torch = SimpleNamespace(cuda=SimpleNamespace(Event=Event), mm=Mock())
+        result = gemm.calibrate_queued(torch, None, None, None)
+        self.assertEqual(result["operations"], 32)
+        self.assertEqual(torch.mm.call_count, 32)
+        self.assertEqual(result["estimated_gemm_ms"], 2)
+        self.assertEqual(result["sum_operation_seconds"], 0.032)
+        self.assertEqual([c for c in calls if c[0] == "sync"], [("sync", 63)])
+        self.assertNotIn("timings_ms", result)
+
+    def test_calibration_samples_are_separate_and_require_complete_reads(self):
+        session = NvmlSession(None)
+        with Sampler(session, 0.1, enabled=False) as sampler:
+            sampler.begin_calibration()
+            sampler.end_calibration()
+        sampler.calibration_start, sampler.calibration_end = 1, 2
+        sampler.timed_start, sampler.timed_end = 3, 4
+        template = sampler.samples[0]
+        sampler.samples = [{**template, "source": "poll", "elapsed_seconds": start, "completed_seconds": end}
+                           for start, end in ((1.1, 1.2), (1.9, 2.1), (2.9, 3.1), (3.1, 3.2))]
+        phases = sampler.result()["phases"]
+        self.assertEqual(phases["calibration"]["sample_count"], 1)
+        self.assertEqual(phases["timed"]["sample_count"], 1)
+
     def test_sample_compatibility_estimation_and_event_budget(self):
         self.assertEqual(select_samples(30, None, None)["selected_samples"], 30)
         self.assertEqual(select_samples(30, 1, 10)["selected_samples"], 100)

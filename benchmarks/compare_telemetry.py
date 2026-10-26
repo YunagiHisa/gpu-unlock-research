@@ -59,6 +59,8 @@ def run_reasons(row):
         reasons.append("unsupported_draft_version")
     if row["exit_code"] != 0 or result.get("status") != "draft_validated" or result.get("accuracy", {}).get("passed") is not True:
         reasons.append("measurement_failed")
+    if result.get("timed_measurement", {}).get("target_met") is False:
+        reasons.append("requested_timed_duration_not_met")
     if result.get("identity_verified") is not True:
         reasons.append("identity_unverified")
     for point in ("before_cooldown", "before", "after"):

@@ -29,6 +29,12 @@ def result(tflops=20, condition="on"):
 
 
 class TestComparison(unittest.TestCase):
+    def test_unmet_duration_is_excluded_even_with_historical_success_status(self):
+        row = {"condition": "on", "exit_code": 0, "result": result()}
+        row["result"]["timed_measurement"]["target_met"] = False
+        self.assertIn("requested_timed_duration_not_met", compare.run_reasons(row))
+        self.assertEqual(compare.comparison_summary([row])["excluded_process_runs"], 1)
+
     def test_cv_uses_sample_standard_deviation_and_records_sample_count(self):
         summary = compare.distribution([1, 2, 3])
         self.assertEqual(summary["samples"], 3)
