@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import os
 import stat
+import uuid as uuid_module
 from pathlib import Path
 
 KEY_HELP = "Initialize a 32-byte key explicitly outside the repository; see README HMAC key setup. No key was generated."
@@ -15,6 +16,32 @@ class IdentityMismatch(RuntimeError):
 
     def __init__(self):
         super().__init__("physical_gpu_identity_mismatch")
+
+
+def uuid_bytes(value):
+    if isinstance(value, bytes) and len(value) == 16:
+        return value
+    if isinstance(value, bytes):
+        value = value.decode("ascii")
+    if not isinstance(value, str) or not value.startswith("GPU-"):
+        raise ValueError("uuid_unavailable")
+    return uuid_module.UUID(value[4:]).bytes
+
+
+def compare_device_uuids(cuda_reader, nvml_reader):
+    # Never include either raw value or exception in the returned evidence.
+    values = []
+    for reader in (cuda_reader, nvml_reader):
+        try:
+            values.append(uuid_bytes(reader()))
+        except Exception:
+            values.append(None)
+    if all(value is not None for value in values):
+        if not hmac.compare_digest(*values):
+            raise IdentityMismatch()
+        return {"status": "available", "matched": True, "cuda_available": True, "nvml_available": True}
+    return {"status": "unavailable", "matched": False, "reason": "uuid_evidence_incomplete",
+            "cuda_available": values[0] is not None, "nvml_available": values[1] is not None}
 
 
 def default_key_path():

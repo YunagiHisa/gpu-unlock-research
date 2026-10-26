@@ -83,7 +83,7 @@ class TestIdentity(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             target = Path(root) / "diagnostic.json"
             with patch.object(gemm, "run", side_effect=IdentityMismatch()), contextlib.redirect_stdout(io.StringIO()):
-                code = gemm.main(["--mode", "fp16", "--output", str(target)])
+                code = gemm.main(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", "fp16", "--output", str(target)])
             self.assertEqual(code, 4)
             result = json.loads(target.read_text())
             self.assertFalse(result["identity_verified"])
@@ -95,7 +95,7 @@ class TestIdentity(unittest.TestCase):
         torch = MagicMock()
         torch.cuda.device_count.return_value = 1
         torch.cuda.get_device_properties.return_value = SimpleNamespace(name="test")
-        args = gemm.parse_args(["--mode", "fp16"])
+        args = gemm.parse_args(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", "fp16"])
         with patch.dict("sys.modules", {"torch": torch}), \
              patch.object(gemm, "configure_mode", return_value={}), \
              patch.object(gemm, "cuda_pci_bus_id", return_value="0000:01:00.0"), \

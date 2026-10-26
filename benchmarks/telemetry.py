@@ -9,7 +9,7 @@ import threading
 import time
 
 from benchmarks.evidence import pci_id
-from benchmarks.identity import IdentityMismatch, gpu_pseudonym
+from benchmarks.identity import IdentityMismatch, compare_device_uuids, gpu_pseudonym
 
 
 def unavailable(reason):
@@ -45,6 +45,8 @@ class NvmlSession:
         self.handle = None
         self.initialized = False
         self.identity_verified = False
+        self.pci_verified = False
+        self.uuid_verification = {"status": "unavailable", "matched": False, "reason": "not_checked"}
         self.status = "unavailable"
         self.reason = "cuda_pci_unavailable"
         if measured_pci is None:
@@ -58,13 +60,27 @@ class NvmlSession:
             if actual != pci_id(measured_pci):
                 raise IdentityMismatch()
             self.status, self.reason = "available", None
-            self.identity_verified = True
+            self.pci_verified = True
+            self.reason = "uuid_not_checked"
         except IdentityMismatch:
             self.close()
             raise
         except Exception:
             self.handle = None
             self.reason = "nvml_dependency_init_or_pci_mapping_failed"
+
+    def verify_cuda_uuid(self, cuda_reader):
+        def nvml_reader():
+            if self.handle is None:
+                raise ValueError
+            return self.nvml.nvmlDeviceGetUUID(self.handle)
+        self.uuid_verification = compare_device_uuids(cuda_reader, nvml_reader)
+        self.identity_verified = self.pci_verified and self.uuid_verification["matched"]
+        if self.identity_verified:
+            self.reason = None
+        else:
+            self.reason = "uuid_evidence_incomplete" if self.pci_verified else self.reason
+        return self.uuid_verification
 
     def pseudonym(self, key_path=None):
         def uuid_reader():
@@ -138,6 +154,8 @@ class NvmlSession:
         result["supported_clock_event_reasons"] = self.reasons(supported=True)
         result["driver_version"] = (read_value(lambda: self.nvml.nvmlSystemGetDriverVersion())
                                     if self.initialized else unavailable(self.reason))
+        result["nvml_version"] = (read_value(lambda: self.nvml.nvmlSystemGetNVMLVersion())
+                                  if self.initialized else unavailable(self.reason))
         result["visibility_note"] = "Guest-visible PCIe and persistence values may be limited by passthrough"
         return result
 
@@ -146,7 +164,15 @@ class NvmlSession:
                 "power_w": self.query("nvmlDeviceGetPowerUsage", scale=1000),
                 "temperature_c": self.query("nvmlDeviceGetTemperature", 0),
                 "fan_percent": self.query("nvmlDeviceGetFanSpeed"),
+                "memory_clock_mhz": self.query("nvmlDeviceGetClockInfo", 2),
+                "gpu_utilization_percent": self.utilization(),
+                "performance_state": self.query("nvmlDeviceGetPerformanceState"),
                 "clock_event_reasons": self.reasons()}
+
+    def utilization(self):
+        if self.handle is None:
+            return unavailable(self.reason)
+        return read_value(lambda: int(self.nvml.nvmlDeviceGetUtilizationRates(self.handle).gpu))
 
     def counters(self):
         result = {}
@@ -175,12 +201,13 @@ def counter_deltas(before, after):
 
 def sample_summary(samples):
     summaries = {}
-    for name in ("sm_clock_mhz", "power_w", "temperature_c", "fan_percent"):
-        values = [s[name]["value"] for s in samples if s[name]["status"] == "available"]
+    for name in ("sm_clock_mhz", "power_w", "temperature_c", "fan_percent", "memory_clock_mhz", "gpu_utilization_percent", "performance_state"):
+        values = [s[name]["value"] for s in samples if s.get(name, {}).get("status") == "available"]
         summaries[name] = {"status": "available" if values else "unavailable",
                            "reason": None if values else "no_available_field_samples",
                            "available_samples": len(values), "unavailable_samples": len(samples) - len(values),
                            "min": min(values) if values else None, "max": max(values) if values else None,
+                           "median": statistics.median(values) if values else None,
                            "mean": statistics.mean(values) if values else None}
     return summaries
 
@@ -202,10 +229,17 @@ class Sampler:
         self.error = None
         self.enabled = enabled
         self.timed_start = self.timed_end = None
+        self.warmup_start = self.warmup_end = None
 
     def _sample(self, source="poll"):
         start = time.perf_counter() - self.started
-        values = self.session.sample()
+        try:
+            values = self.session.sample()
+        except Exception:
+            self.error = "sampling_failed"
+            values = {name: unavailable("sampling_failed") for name in
+                      ("sm_clock_mhz", "power_w", "temperature_c", "fan_percent", "memory_clock_mhz",
+                       "gpu_utilization_percent", "performance_state", "clock_event_reasons")}
         self.samples.append({"elapsed_seconds": start, "completed_seconds": time.perf_counter() - self.started,
                              "source": source, **values})
 
@@ -214,6 +248,12 @@ class Sampler:
 
     def end_timed(self):
         self.timed_end = time.perf_counter() - self.started
+
+    def begin_warmup(self):
+        self.warmup_start = time.perf_counter() - self.started
+
+    def end_warmup(self):
+        self.warmup_end = time.perf_counter() - self.started
 
     def _worker(self):
         try:
@@ -244,9 +284,22 @@ class Sampler:
                  and s["source"] == "poll" and self.timed_start <= s["elapsed_seconds"]
                  and s["completed_seconds"] <= self.timed_end]
         summaries = sample_summary(self.samples)
+        phases = {"idle_before": [s for s in self.samples if s["source"] == "endpoint_before"],
+                  "warmup": [s for s in self.samples if s["source"] == "poll" and self.warmup_start is not None and self.warmup_end is not None
+                             and self.warmup_start <= s["elapsed_seconds"] and s["completed_seconds"] <= self.warmup_end],
+                  "timed": timed, "post": [s for s in self.samples if s["source"] == "endpoint_after"]}
+        phase_statistics = {}
+        for phase, samples in phases.items():
+            phase_masks = [s["clock_event_reasons"]["value"] for s in samples if s["clock_event_reasons"]["status"] == "available"]
+            phase_statistics[phase] = {"sample_count": len(samples), "status": "available" if samples else "unavailable",
+                                       "summary": sample_summary(samples),
+                                       "clock_events": {"available_samples": len(phase_masks),
+                                                        "status": "available" if phase_masks else "unavailable",
+                                                        "observed_samples_by_reason": {name: sum(bool(mask & bit) for mask in phase_masks) if phase_masks else None for name, bit in REASONS.items()}}}
         masks = [s["clock_event_reasons"]["value"] for s in self.samples if s["clock_event_reasons"]["status"] == "available"]
         return {"status": "partial" if self.error else self.session.status, "error": self.error,
                 "polling_enabled": self.enabled,
+                "phases": phase_statistics,
                 "timed_coverage": {"sample_count": len(timed), "status": "available" if timed else "missing",
                                    "reason": None if timed else ("no_complete_poll_in_timed_window" if self.enabled else "polling_disabled"),
                                    "start_seconds": self.timed_start, "end_seconds": self.timed_end},

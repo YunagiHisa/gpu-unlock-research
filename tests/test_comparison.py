@@ -67,19 +67,22 @@ class TestComparison(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             target = Path(root) / "runs"
             with patch.object(compare.subprocess, "run", side_effect=run), contextlib.redirect_stdout(io.StringIO()):
-                code = compare.main(["--mode", "fp16", "--samples", "30", "--hmac-key-file", "/synthetic/private.key", "--output-dir", str(target)])
+                code = compare.main(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--max-start-temp", "47", "--cooldown-timeout-s", "0", "--mode", "fp16", "--samples", "30", "--hmac-key-file", "/synthetic/private.key", "--output-dir", str(target)])
             report = json.loads((target / "comparison.json").read_text())
             self.assertEqual(code, 0)
             self.assertEqual(report["execution_order"], ["on", "off", "off", "on", "on", "off"])
             self.assertEqual(len(commands), 6)
             self.assertTrue(all(command[command.index("--samples") + 1] == "30" for command in commands))
+            for name, expected in (("--requested-state", "before"), ("--execution-kind", "diagnostic"),
+                                   ("--max-start-temp", "47.0"), ("--cooldown-timeout-s", "0.0")):
+                self.assertTrue(all(command[command.index(name) + 1] == expected for command in commands))
             self.assertNotIn("private.key", json.dumps(report))
 
     def test_failure_preserved_without_retry(self):
         with tempfile.TemporaryDirectory() as root:
             target = Path(root) / "runs"
             with patch.object(compare.subprocess, "run", side_effect=subprocess.TimeoutExpired("private-command", 1)) as run, contextlib.redirect_stdout(io.StringIO()):
-                code = compare.main(["--mode", "fp16", "--output-dir", str(target)])
+                code = compare.main(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", "fp16", "--output-dir", str(target)])
             self.assertEqual(code, 5)
             run.assert_called_once()
             saved = (target / "00-on.json").read_text()

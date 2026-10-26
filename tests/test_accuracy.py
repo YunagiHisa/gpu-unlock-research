@@ -21,7 +21,7 @@ class TestAccuracy(unittest.TestCase):
         torch.cuda.Event.return_value.elapsed_time.return_value = 1.0
         details = {"method": "full_fp64", "checked_output_shape": [2, 2],
                    "sampling_seed": None, "note": None}
-        args = gemm.parse_args(["--mode", mode, "--m", "2", "--n", "2", "--k", "2", "--samples", "2"])
+        args = gemm.parse_args(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", mode, "--m", "2", "--n", "2", "--k", "2", "--samples", "2"])
         with patch.dict("sys.modules", {"torch": torch}), \
              patch("benchmarks.identity._read_key", return_value=(None, "key_missing")), \
              patch.object(gemm, "cuda_pci_bus_id", return_value=None), \
@@ -38,7 +38,7 @@ class TestAccuracy(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "failure.json"
             with patch.object(gemm, "run", return_value=result), contextlib.redirect_stdout(io.StringIO()):
-                code = gemm.main(["--mode", "fp16", "--output", str(target)])
+                code = gemm.main(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", "fp16", "--output", str(target)])
             self.assertEqual(code, expected_code)
             saved = json.loads(target.read_text())
             self.assertEqual(saved, result)
@@ -99,7 +99,7 @@ class TestAccuracy(unittest.TestCase):
             target.write_text("original")
             with patch.object(gemm, "run", return_value={"status": "accuracy_failed"}):
                 with self.assertRaises(FileExistsError):
-                    gemm.main(["--mode", "fp16", "--output", str(target)])
+                    gemm.main(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", "fp16", "--output", str(target)])
             self.assertEqual(target.read_text(), "original")
 
 

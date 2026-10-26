@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 from benchmarks.core import MAX_TIMING_SAMPLES, MODES, percentile
-from benchmarks.gemm import positive_float, positive_int
+from benchmarks.gemm import positive_float, positive_int, preflight_arguments, validate_preflight_arguments
 
 
 def execution_order(runs):
@@ -83,7 +83,8 @@ def comparison_summary(records):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument("--gpu", type=int, required=True)
+    preflight_arguments(parser)
     parser.add_argument("--mode", choices=MODES, required=True)
     for axis in ("m", "n", "k"):
         parser.add_argument("--" + axis, type=positive_int, default=2048)
@@ -97,6 +98,7 @@ def parse_args(argv=None):
     parser.add_argument("--hmac-key-file", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True, help="new local directory; never overwritten")
     args = parser.parse_args(argv)
+    validate_preflight_arguments(parser, args)
     if args.runs < 3 or args.samples > MAX_TIMING_SAMPLES:
         parser.error("require at least 3 process runs per condition and samples within CUDA Event budget")
     return args
@@ -110,7 +112,7 @@ def main(argv=None):
         filename = f"{index:02d}-{condition}.json"
         target = args.output_dir / filename
         command = [sys.executable, "-m", "benchmarks.gemm", "--telemetry", condition, "--output", str(target)]
-        for name in ("gpu", "mode", "m", "n", "k", "samples", "warmup_seconds", "telemetry_interval", "seed", "experiment_metadata", "hmac_key_file"):
+        for name in ("gpu", "requested_state", "execution_kind", "max_start_temp", "cooldown_timeout_s", "mode", "m", "n", "k", "samples", "warmup_seconds", "telemetry_interval", "seed", "experiment_metadata", "hmac_key_file"):
             value = getattr(args, name)
             if value is not None:
                 command.extend(["--" + name.replace("_", "-"), str(value)])

@@ -21,8 +21,9 @@ class TestIntegration(unittest.TestCase):
         session = Mock()
         session.status = "available"
         session.identity_verified = True
+        session.uuid_verification = {"status": "available", "matched": True}
         session.pseudonym.return_value = {"status": "unavailable", "value": None, "reason": "key_missing"}
-        session.compute_process_count.return_value = {"status": "available", "value": 1}
+        session.compute_process_count.return_value = {"status": "available", "value": 1, "other_processes": {"status": "available", "value": 0}}
         session.metadata.return_value = {}
         def counters():
             calls.append("counter")
@@ -48,13 +49,14 @@ class TestIntegration(unittest.TestCase):
             kwargs["sampler"].end_timed()
             kwargs["measurement"].update({"gpu_span_seconds": args[4] / 1000, "queued_wall_seconds": args[4] / 1000 + 0.001})
             return [1] * args[4]
-        args = gemm.parse_args(["--mode", "fp16", "--samples", "2", "--telemetry-interval", "1000"])
+        args = gemm.parse_args(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", "fp16", "--samples", "2", "--telemetry-interval", "1000"])
         args.min_timed_seconds = min_seconds
         with patch.dict("sys.modules", {"torch": torch}), \
              patch.object(gemm, "configure_mode", return_value={}), \
              patch.object(gemm, "cuda_pci_bus_id", return_value="0000:05:00.0"), \
              patch.object(gemm, "NvmlSession", return_value=session), \
              patch.object(gemm, "environment_metadata", return_value={}), \
+             patch.object(gemm, "cooldown", return_value={"status": "unavailable", "passed": False, "reason": "temperature_condition_not_configured"}), \
              patch("benchmarks.evidence.kernel_evidence", return_value={}), \
              patch.object(gemm, "accuracy_result", side_effect=accuracy), \
              patch.object(gemm, "measure_queued", side_effect=measure), \
@@ -95,7 +97,7 @@ class TestIntegration(unittest.TestCase):
     def test_invalid_interval_cli(self):
         for interval in ("0", "-1", "nan", "inf"):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-                gemm.parse_args(["--mode", "fp16", "--telemetry-interval", interval])
+                gemm.parse_args(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", "fp16", "--telemetry-interval", interval])
 
     def test_warmup_estimate_and_actual_duration_are_distinct(self):
         result, _ = self.run_fake([0.0001, 0.0001], min_seconds=1)

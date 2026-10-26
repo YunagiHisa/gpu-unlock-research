@@ -26,11 +26,11 @@ class TestCore(unittest.TestCase):
         self.assertEqual(percentile([7], 50), 7)
 
     def test_cli(self):
-        args = parse_args(["--mode", "bf16", "--m", "32", "--n", "64", "--k", "128"])
+        args = parse_args(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", "bf16", "--m", "32", "--n", "64", "--k", "128"])
         self.assertEqual((args.m, args.n, args.k), (32, 64, 128))
         with contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit):
-                parse_args(["--mode", "bf16", "--m", "0"])
+                parse_args(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", "bf16", "--m", "0"])
 
     def test_precision_settings(self):
         class Matmul:

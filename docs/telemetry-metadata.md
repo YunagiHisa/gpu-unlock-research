@@ -13,11 +13,16 @@ device and PCI bus ID through the CUDA driver. This respects CUDA visibility
 remapping without assuming NVML ordinals match CUDA ordinals. NVML selects a
 handle by normalized PCI ID and reads the PCI ID back to verify it. A missing
 CUDA mapping or NVML failure produces explicit unavailable fields and never
-falls back to an NVML index. Only a successful PCI match sets
-`identity_verified: true`. A contradictory readback or operator PCI binding
+falls back to an NVML index. The actual current-context device also supplies
+its UUID through the CUDA driver, independently compared with the NVML UUID.
+This follows CUDA_VISIBLE_DEVICES remapping through the context, not an index
+guess. Only matching PCI and UUID evidence sets `identity_verified: true`.
+No raw UUID is serialized, logged, or included in an exception.
+A contradictory PCI/UUID readback or operator PCI binding
 stops before tensor allocation with exit code 4 and a sanitized diagnostic.
-An unavailable mapping permits measurement with `identity_verified: false`
-and a reason. If CUDA PCI is unavailable, operator evidence remains unbound
+An unavailable mapping permits explicit diagnostic execution with
+`identity_verified: false` and a reason; formal preparation blocks before GEMM.
+If CUDA PCI is unavailable, operator evidence remains unbound
 and cannot confer high confidence. PR #3 always keeps `baseline_eligible: false`
 with reasons including pending PR #4 admission logic and missing evidence.
 
@@ -43,6 +48,15 @@ and a reason. No endpoint value is substituted. The comparison runner also
 marks empty distributions unavailable and does not compute CV with fewer than
 two valid observations or with zero mean.
 
+`phases` explicitly separates `idle_before`, `warmup`, `timed`, and `post`,
+each with sample counts, per-field min/median/max/mean, and sampled reason counts
+including SW Power Cap, SW Thermal Slowdown, and HW Thermal Slowdown. The
+idle/post phases are endpoint snapshots, not proof of a settled idle state.
+Warm-up and timed polls must both start and finish inside their phase; reads
+crossing boundaries remain raw but are excluded from those phase summaries.
+Empty phases have unavailable fields and null values. Zero sampled reason
+observations cannot establish absence of brief throttling.
+
 `observed_samples_by_reason` counts samples with a reason bit set, not distinct
 events or time under a limit. No samples available yields null, not zero. Power
 and thermal `violation_counters` retain before/after duration and reference
@@ -62,6 +76,14 @@ view and may not describe the host link. cuBLAS version is explicitly unavailabl
 because there is no reliable public PyTorch query in this implementation.
 Missing GPU dependencies permit a diagnostic benchmark result with unavailable
 telemetry, which remains ineligible for a formal baseline.
+Additional metadata records OS name, CPU model, and NVML version. The preferred
+BLAS library is queried without arguments, without overriding PyTorch settings.
+Memory clock, GPU utilization percentage, and performance state are sampled
+with explicit unavailable statuses on failure. Environment recording is limited
+to canonical CUDA_DEVICE_ORDER. CUBLAS_WORKSPACE_CONFIG and
+TORCH_BLAS_PREFER_CUBLASLT values are deliberately not stored: the formal issue
+does not provide an allowlist for them. They are explicitly unavailable pending
+specification approval; no environment dump or guessed values are used.
 
 ## Operator input and cooling history
 
@@ -131,7 +153,7 @@ Thermal maintenance does not establish unlock history or a qualifying power cycl
 
 ```bash
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-python -m benchmarks.gemm --gpu 1 --mode fp16 \
+python -m benchmarks.gemm --gpu 1 --mode fp16 --execution-kind diagnostic \
   --requested-state before --telemetry-interval 0.1 \
   --experiment-metadata results/local-gpu-b-metadata.json \
   --output results/before/draft-gpu-b.json
@@ -144,8 +166,8 @@ baseline admission remain in the next implementation scope.
 
 ## Unlock-state evidence
 
-`requested_state` is an operator label (`before`, `after`, `reverted`), defaulting
-to `before`. `verification_status` is `not_applicable` only for `before` with
+`requested_state` is a required operator label (`before`, `after`, `reverted`),
+without a default. GPU selection is also required. `verification_status` is `not_applicable` only for `before` with
 `initial_state_confidence: high`; every other result is `unconfirmed`.
 This runner never assigns `confirmed` or `failed`. Such decisions require a
 separate evidence review, independent of numerical validation or telemetry.

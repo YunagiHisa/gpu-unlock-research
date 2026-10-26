@@ -11,8 +11,8 @@ Activate a Python environment with CUDA-enabled PyTorch 2.11 and run:
 ```bash
 python -m pip install -r requirements-gpu.txt
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-python -m benchmarks.gemm --gpu 0 --mode fp16 --m 2048 --n 2048 --k 2048 --warmup-seconds 3 --samples 30
-python -m benchmarks.gemm --gpu 1 --mode bf16 --m 2048 --n 2048 --k 2048
+python -m benchmarks.gemm --gpu 0 --requested-state before --execution-kind diagnostic --mode fp16 --m 2048 --n 2048 --k 2048 --warmup-seconds 3 --samples 30
+python -m benchmarks.gemm --gpu 1 --requested-state before --execution-kind diagnostic --mode bf16 --m 2048 --n 2048 --k 2048
 python -m unittest discover -s tests -v
 ```
 
@@ -22,7 +22,33 @@ See [telemetry, cooling history, and state-evidence design](docs/telemetry-metad
 
 The [Issue #1 conformance review](docs/issue-1-conformance.md) records the
 operator-supplied formal specification, implemented scope, and remaining gaps.
-See also the [final verification report](docs/pr3-final-verification.md).
+Historical verification reports are preserved in an [English PR comment](https://github.com/YunagiHisa/gpu-unlock-research/pull/3#issuecomment-6412810816).
+
+## Explicit state and preparation gates
+
+Both `--gpu` and `--requested-state {before,after,reverted}` are required.
+There is no implicit Before measurement. The comparison runner requires and
+passes the same state and temperature conditions to every child process.
+
+`--execution-kind formal` (the default) prepares a run only when independent
+PCI/UUID evidence matches, the configured start-temperature gate passes, and
+the count of other compute processes is known to be zero. It does not confer
+baseline eligibility. `--execution-kind diagnostic` explicitly permits
+incomplete evidence or contention for investigation and records the reasons;
+it must not bypass contention during the project's GPU smoke tests.
+
+`--max-start-temp` and `--cooldown-timeout-s` have **no numeric defaults**.
+Supply both when using the temperature gate. Issue #1 prescribes neither
+value; an earlier 50 C proposal was not approved as a default. With neither
+option, the gate is unverified and formal preparation saves a blocked diagnostic
+without GEMM. Diagnostic mode records the missing gate. With both supplied,
+NVML temperature is read and passively polled while above the operator's limit.
+A timeout blocks GEMM in both modes; unavailable temperature blocks formal
+preparation. Results record actual temperature, waiting time, checks, and outcome.
+No clock, fan, power, or other GPU setting is changed during cooldown.
+Blocked preparation exits with code 6. Other-process presence or unknown count
+before/after adds an ineligibility reason. MPS, namespaces, and process arrival
+between reads remain limitations; zero counts do not prove isolation.
 
 ## HMAC key setup
 
@@ -119,7 +145,7 @@ The runner stops on failure without retrying or changing measurement logic.
 
 ```bash
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-python -m benchmarks.compare_telemetry --gpu 0 --mode fp16 \
+python -m benchmarks.compare_telemetry --gpu 0 --requested-state before --execution-kind diagnostic --mode fp16 \
   --m 2048 --n 2048 --k 2048 --samples 1000 --warmup-seconds 1 \
   --runs 3 --output-dir results/diagnostics/telemetry-comparison
 ```
@@ -127,7 +153,7 @@ python -m benchmarks.compare_telemetry --gpu 0 --mode fp16 \
 These runs never count as formal Before baseline. Examine thermal/power/clock
 drift and contention before attributing performance differences to the sampler.
 Report suspected effects; do not silently change the timing method.
-See the [2026-10-26 diagnostic report](docs/sampler-diagnostic-2026-10-26.md).
+See the [historical diagnostic report in the PR conversation](https://github.com/YunagiHisa/gpu-unlock-research/pull/3#issuecomment-6412810816).
 
 ## Measurement methodology
 
@@ -164,11 +190,13 @@ Never enable gpu-unlock merely to run this benchmark. Collect a verified baselin
 
 ## Failure policy
 
-A proven CUDA/NVML PCI contradiction or contradictory operator PCI binding
+A proven CUDA/NVML PCI or UUID contradiction or contradictory operator PCI binding
 stops before tensor allocation and GEMM, saves a sanitized diagnostic, and
 exits **4**. NVML unavailable or missing CUDA PCI data permits diagnostic
-measurement with `identity_verified: false` and a reason. Only a successful PCI
-match sets it true. A missing key independently makes the pseudonym unavailable.
+execution only in explicit diagnostic mode with `identity_verified: false` and
+a reason. Both PCI and independent context-device UUID matching are required
+to set it true. UUID bytes are compared in memory and never serialized or logged.
+A missing key independently makes the pseudonym unavailable.
 Unavailable dependencies or runtime measurement errors save a sanitized
 diagnostic and exit **5**. PR #3 always sets `baseline_eligible: false` with
 `baseline_ineligibility_reasons`; final admission belongs to PR #4's validator.

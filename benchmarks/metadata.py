@@ -8,6 +8,28 @@ import subprocess
 from pathlib import Path
 
 from benchmarks.evidence import pci_id
+from benchmarks.telemetry import read_value, unavailable
+
+
+def cuda_uuid_bytes(torch, gpu):
+    """UUID of the device bound to the actual current context, never an ordinal."""
+    try:
+        torch.cuda.current_stream(gpu)
+        driver = ctypes.CDLL("libcuda.so.1")
+        device = ctypes.c_int()
+        driver.cuCtxGetDevice.argtypes = [ctypes.POINTER(ctypes.c_int)]
+        driver.cuCtxGetDevice.restype = ctypes.c_int
+        if driver.cuCtxGetDevice(ctypes.byref(device)) != 0:
+            return None
+        function = getattr(driver, "cuDeviceGetUuid_v2", None) or driver.cuDeviceGetUuid
+        function.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        function.restype = ctypes.c_int
+        value = (ctypes.c_ubyte * 16)()
+        if function(ctypes.byref(value), device.value) != 0:
+            return None
+        return bytes(value)
+    except Exception:
+        return None
 
 
 def cuda_pci_bus_id(torch, gpu):
@@ -48,6 +70,17 @@ def git_metadata():
 
 
 def environment_metadata():
-    return {"guest_kernel": platform.release(), "benchmark_git": git_metadata(),
+    os_name = read_value(lambda: platform.freedesktop_os_release()["PRETTY_NAME"])
+    def cpu_model():
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                return line.split(":", 1)[1].strip()
+        raise ValueError
+    return {"os_name": os_name, "cpu_model": read_value(cpu_model),
+            "allowed_environment": {"CUDA_DEVICE_ORDER": {"value": "PCI_BUS_ID", "status": "available"}
+                                    if os.environ.get("CUDA_DEVICE_ORDER") == "PCI_BUS_ID" else unavailable("unset_or_noncanonical"),
+                                    **{name: {"value": None, "status": "unavailable", "reason": "allowlist_not_defined_in_issue_1"}
+                                       for name in ("CUBLAS_WORKSPACE_CONFIG", "TORCH_BLAS_PREFER_CUBLASLT")}},
+            "guest_kernel": platform.release(), "benchmark_git": git_metadata(),
             "cuda_device_order": "PCI_BUS_ID" if os.environ.get("CUDA_DEVICE_ORDER") == "PCI_BUS_ID" else "not_set_to_PCI_BUS_ID",
             "cublas_version": {"value": None, "status": "unavailable", "reason": "no_reliable_public_pytorch_query"}}
