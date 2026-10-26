@@ -23,6 +23,10 @@ class TestAccuracy(unittest.TestCase):
                    "sampling_seed": None, "note": None}
         args = gemm.parse_args(["--mode", mode, "--m", "2", "--n", "2", "--k", "2", "--samples", "2"])
         with patch.dict("sys.modules", {"torch": torch}), \
+             patch("benchmarks.identity._read_key", return_value=(None, "key_missing")), \
+             patch.object(gemm, "cuda_pci_bus_id", return_value=None), \
+             patch("benchmarks.evidence.kernel_evidence", return_value={}), \
+             patch.object(gemm, "environment_metadata", return_value={}), \
              patch.object(gemm, "configure_mode", return_value={}), \
              patch.object(gemm, "check_accuracy", side_effect=[(e, details) for e in errors]) as check, \
              patch.object(gemm.time, "monotonic", side_effect=[0, 4]):
@@ -67,6 +71,10 @@ class TestAccuracy(unittest.TestCase):
         self.assertEqual(result["status"], "draft_validated")
         self.assertTrue(result["accuracy"]["passed"])
         self.assertEqual(result["accuracy"]["normalized_l2_error"], 0.0002)
+        self.assertFalse(result["identity_verified"])
+        self.assertIsNotNone(result["identity_verification_reason"])
+        self.assertIn("physical_identity_unverified", result["baseline_ineligibility_reasons"])
+        self.assertIn("stable_gpu_pseudonym_unavailable", result["baseline_ineligibility_reasons"])
         self.save_result(result, 0)
 
     def test_tf32_suspect_preserves_numerical_pass_and_timings(self):

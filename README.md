@@ -2,13 +2,14 @@
 
 Reproducible experiments assessing [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock) on dual NVIDIA GeForce RTX 3060 GPUs.
 
-This is the initial benchmark-core implementation. It implements a single-device CUDA GEMM runner and CPU-only tests. The complete baseline protocol from [Issue #1](https://github.com/YunagiHisa/gpu-unlock-research/issues/1) is not implemented yet. **Do not treat generated output as final before-unlock evidence.**
+This draft implements single-device CUDA GEMM, optional NVML telemetry, GPU/environment metadata, and conservative unlock-state evidence. The complete baseline protocol from [Issue #1](https://github.com/YunagiHisa/gpu-unlock-research/issues/1) is not implemented yet. **Do not treat generated output as final before-unlock evidence.** Every result has `baseline_eligible: false`; numerical success does not certify a baseline.
 
 ## Running the draft
 
 Activate a Python environment with CUDA-enabled PyTorch 2.11 and run:
 
 ```bash
+python -m pip install -r requirements-gpu.txt
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 python -m benchmarks.gemm --gpu 0 --mode fp16 --m 2048 --n 2048 --k 2048 --warmup-seconds 3 --samples 30
 python -m benchmarks.gemm --gpu 1 --mode bf16 --m 2048 --n 2048 --k 2048
@@ -16,6 +17,117 @@ python -m unittest discover -s tests -v
 ```
 
 The draft currently prints JSON. Use `--output results/draft/sample.json` to save locally; output paths cannot be overwritten.
+
+See [telemetry, cooling history, and state-evidence design](docs/telemetry-metadata.md) for the new CLI options and operator metadata. GPU 1's thermal paste was replaced on 2026-10-26; earlier smoke tests must not be reused as a formal baseline.
+
+The [Issue #1 conformance review](docs/issue-1-conformance.md) records the
+operator-supplied formal specification, implemented scope, and remaining gaps.
+See also the [final verification report](docs/pr3-final-verification.md).
+
+## HMAC key setup
+
+Stable GPU pseudonyms use HMAC-SHA256 over the NVML UUID with a versioned domain
+prefix. Raw UUIDs and key contents are never included in results, logs, errors,
+or Git. Operator labels such as `gpu-b` are separate from these stable IDs.
+
+The default key is `$XDG_CONFIG_HOME/gpu-unlock-research/hmac.key`, or
+`~/.config/gpu-unlock-research/hmac.key` when XDG_CONFIG_HOME is unset. Override
+with `--hmac-key-file`. The key must be **outside this repository**, exactly
+32 binary bytes, a regular file owned by the current user with mode **600**,
+inside a directory owned by that user with mode **700**. Symlink files, symlink
+key directories, and hardlinked key files are rejected. The benchmark never
+creates keys or repairs permissions.
+
+To explicitly initialize a key once, run the following manually from the
+repository root. It refuses to overwrite a key, rejects unsafe directory
+permissions, and prints no secret material. This is an operator setup step:
+
+```bash
+python - <<'PY'
+import os
+import secrets
+import stat
+from pathlib import Path
+
+directory = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "gpu-unlock-research"
+if directory.resolve().is_relative_to(Path.cwd().resolve()):
+    raise SystemExit("Choose a configuration directory outside the repository")
+os.umask(0o077)
+directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+info = directory.lstat()
+if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700 or info.st_uid != os.getuid():
+    raise SystemExit("Configuration directory must be owned by you with mode 700")
+descriptor = os.open(directory / "hmac.key", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(descriptor, "wb") as output:
+    output.write(secrets.token_bytes(32))
+print("HMAC key initialized; back it up securely before collecting comparable results")
+PY
+```
+
+Back up the exact binary key in an encrypted offline backup or encrypted secret
+store, with access limited to the experiment owner. Keep backup key files at
+600 in a 700 directory; restore those permissions and ownership before use.
+Never paste the key into a ticket, shell command argument, JSON, logs, or Git.
+Keep the same key across comparable experiments. Losing the key prevents
+regenerating the same GPU pseudonyms; a replacement key changes all IDs and
+breaks automatic matching to previous records. Public digests cannot recover
+the lost key or prove which newly named GPU corresponds to an old record.
+
+A missing or unusable key permits diagnostic measurement and JSON saving:
+`device.pseudonym` is unavailable with a fixed, nonsecret reason and setup
+guidance. The file path and exception text are not serialized. No unkeyed UUID
+hash or automatically generated replacement is used.
+
+## Duration and sampler diagnostics
+
+`--samples` retains fixed-count behavior. Optional `--min-timed-seconds 1` uses
+the warm-up CUDA span divided by its operation count to estimate the count for
+that duration. The count is at least `--samples` and at most **10,000** (20,000
+retained CUDA Events). A larger explicit `--samples` is rejected. The target is
+an estimate: queue gaps, clock changes, and the cap may prevent reaching it.
+There is no automatic remeasurement. `timed_measurement` records the estimate,
+predicted duration, selected count, cap, actual first-start to final-stop CUDA
+span, wall duration through final synchronization, and whether the target was
+met. The sum of per-operation times is separate from the span. Formal sample
+counts and minimum duration remain a PR #4 decision.
+
+`telemetry.timed_coverage` counts only complete polling reads inside the queued
+timed window, excluding endpoints and warm-up. Zero complete polls at 100 ms
+is explicitly `missing`; endpoints are not substituted. `--telemetry off`
+disables the worker while retaining matching endpoint snapshots and process
+count reads outside timing, for diagnostic comparison.
+`telemetry.timed_summary` contains only complete timed-window polls and marks
+each field `unavailable` with null statistics when no valid samples exist.
+`telemetry.summary` remains the separately labelled whole-collection summary.
+Comparison statistics explicitly mark empty distributions unavailable; CV is
+unavailable for fewer than two valid samples or a zero mean.
+
+NVML compute-process **counts only** are recorded before and after measurement.
+No PID, process name, or executable path is retained. `value` includes this
+benchmark when visible; `other_processes` excludes the current process by a
+transient PID comparison. PID namespaces and MPS may limit that classification.
+Neither field proves exclusivity. Unavailable queries
+have a reason, never a fabricated zero. Even zero at both endpoints cannot
+prove absence of contention in between. Existing services are never stopped.
+
+The comparison runner uses independent processes with ON/OFF, OFF/ON, ON/OFF
+ordering for three runs per condition. It preserves raw results and compares
+TFLOPS median/IQR, sample-standard-deviation/mean CV with sample count,
+measurement duration, and temperature/power/SM clock by
+endpoint phase. ON also has in-window environmental observations. OFF has none.
+The runner stops on failure without retrying or changing measurement logic.
+
+```bash
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+python -m benchmarks.compare_telemetry --gpu 0 --mode fp16 \
+  --m 2048 --n 2048 --k 2048 --samples 1000 --warmup-seconds 1 \
+  --runs 3 --output-dir results/diagnostics/telemetry-comparison
+```
+
+These runs never count as formal Before baseline. Examine thermal/power/clock
+drift and contention before attributing performance differences to the sampler.
+Report suspected effects; do not silently change the timing method.
+See the [2026-10-26 diagnostic report](docs/sampler-diagnostic-2026-10-26.md).
 
 ## Measurement methodology
 
@@ -44,13 +156,22 @@ The selected limits leave margin above observed rounding error while screening m
 
 ## Important limitations
 
-The draft **does not yet** record NVML telemetry, robust PCI identity mapping, kernel/boot evidence, validated baseline state labels, full environment metadata, schema validation, multiple process aggregation, or official result publication rules. These are scheduled in later PRs under Issue #1.
+The draft **does not yet** implement full result JSON Schema validation, formal baseline aggregation, kernel verification for suspicious precision modes, or official baseline admission/publication rules. These remain follow-up work under Issue #1. `schema_version: 0.2.0-draft` identifies the output layout, not a schema-validation guarantee. The sampler comparison has been checked on GPU 0; the full GPU/precision/configuration matrix remains untested for this implementation.
 
 An installed gpu-unlock module is not proof of an active unlock. In Proxmox GPU passthrough, a VM reboot may not reset physical GPU state. For a GPU that has previously undergone an unlock attempt, the project's high-confidence reset protocol requires documented complete host shutdown with AC disconnected, then power-on. The procedure supports evidence gathering but cannot prove internal GPU state.
 
 Never enable gpu-unlock merely to run this benchmark. Collect a verified baseline first.
 
 ## Failure policy
+
+A proven CUDA/NVML PCI contradiction or contradictory operator PCI binding
+stops before tensor allocation and GEMM, saves a sanitized diagnostic, and
+exits **4**. NVML unavailable or missing CUDA PCI data permits diagnostic
+measurement with `identity_verified: false` and a reason. Only a successful PCI
+match sets it true. A missing key independently makes the pseudonym unavailable.
+Unavailable dependencies or runtime measurement errors save a sanitized
+diagnostic and exit **5**. PR #3 always sets `baseline_eligible: false` with
+`baseline_ineligibility_reasons`; final admission belongs to PR #4's validator.
 
 Accuracy is checked before warm-up and again on the final timed output, outside CUDA timing. `accuracy_checks.pre` and `accuracy_checks.post` record the separate results; `post` is null when the pre-check fails and timing is skipped. The existing `accuracy` object retains its fields: its error and reference details describe the latest check, while `passed` requires both checks to pass. These endpoint checks do not validate every timing sample. `accuracy.passed` reports numerical accuracy only; it does not clear precision-mode suspicion.
 

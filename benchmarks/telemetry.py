@@ -1,0 +1,264 @@
+"""Optional NVML reader. No setters, index mapping, or NVIDIA CLI commands."""
+from __future__ import annotations
+
+import importlib
+import math
+import os
+import statistics
+import threading
+import time
+
+from benchmarks.evidence import pci_id
+from benchmarks.identity import IdentityMismatch, gpu_pseudonym
+
+
+def unavailable(reason):
+    return {"value": None, "status": reason}
+
+
+def read_value(call):
+    try:
+        value = call()
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="replace")
+        if isinstance(value, float) and not math.isfinite(value):
+            return unavailable("invalid_value")
+        return {"value": value, "status": "available"}
+    except Exception as exc:
+        # Error text can contain device identifiers or local paths.
+        name = type(exc).__name__
+        status = {"NVMLError_NotSupported": "unsupported", "NVMLError_NoPermission": "permission_denied",
+                  "AttributeError": "api_unavailable", "NVMLError_FunctionNotFound": "api_unavailable"}.get(name, "unavailable")
+        return unavailable(status)
+
+
+# NVML's stable public bit definitions; retain raw masks for unknown future bits.
+REASONS = {"gpu_idle": 0x1, "applications_clocks": 0x2, "sw_power_cap": 0x4,
+           "hw_slowdown": 0x8, "sync_boost": 0x10, "sw_thermal_slowdown": 0x20,
+           "hw_thermal_slowdown": 0x40, "hw_power_brake_slowdown": 0x80,
+           "display_clock_setting": 0x100}
+
+
+class NvmlSession:
+    def __init__(self, measured_pci, nvml=None):
+        self.nvml = nvml
+        self.handle = None
+        self.initialized = False
+        self.identity_verified = False
+        self.status = "unavailable"
+        self.reason = "cuda_pci_unavailable"
+        if measured_pci is None:
+            return
+        try:
+            self.nvml = nvml if nvml is not None else importlib.import_module("pynvml")
+            self.nvml.nvmlInit()
+            self.initialized = True
+            self.handle = self.nvml.nvmlDeviceGetHandleByPciBusId(pci_id(measured_pci))
+            actual = pci_id(self.nvml.nvmlDeviceGetPciInfo(self.handle).busId)
+            if actual != pci_id(measured_pci):
+                raise IdentityMismatch()
+            self.status, self.reason = "available", None
+            self.identity_verified = True
+        except IdentityMismatch:
+            self.close()
+            raise
+        except Exception:
+            self.handle = None
+            self.reason = "nvml_dependency_init_or_pci_mapping_failed"
+
+    def pseudonym(self, key_path=None):
+        def uuid_reader():
+            if not self.identity_verified:
+                raise ValueError
+            return self.nvml.nvmlDeviceGetUUID(self.handle)
+        return gpu_pseudonym(uuid_reader, key_path)
+
+    def compute_process_count(self):
+        if self.handle is None:
+            return {"status": "unavailable", "value": None, "reason": self.reason,
+                    "other_processes": {"status": "unavailable", "value": None, "reason": self.reason}}
+        # Reduce immediately; PID/name/path objects must never reach results.
+        def counts():
+            processes = self.nvml.nvmlDeviceGetComputeRunningProcesses(self.handle)
+            # PID is compared transiently and is never returned or serialized.
+            own_pid = os.getpid()
+            others = read_value(lambda: sum(process.pid != own_pid for process in processes))
+            return {"total": len(processes), "others": others}
+        field = read_value(counts)
+        if field["status"] != "available":
+            return {"status": "unavailable", "value": None, "reason": field["status"],
+                    "other_processes": {"status": "unavailable", "value": None, "reason": field["status"]}}
+        others = field["value"]["others"]
+        if others["status"] != "available":
+            others = {"status": "unavailable", "value": None, "reason": others["status"]}
+        return {"status": "available", "value": field["value"]["total"], "other_processes": others}
+
+    def close(self):
+        if self.initialized:
+            self.initialized = False
+            try:
+                self.nvml.nvmlShutdown()
+            except Exception:
+                self.status, self.reason = "unavailable", "nvml_shutdown_failed"
+
+    def query(self, function, *args, scale=1):
+        if not function.startswith("nvmlDeviceGet"):
+            return unavailable("non_read_only_api_rejected")
+        if self.handle is None:
+            return unavailable(self.reason)
+        def get():
+            value = getattr(self.nvml, function)(self.handle, *args)
+            return value if scale == 1 else value / scale
+        return read_value(get)
+
+    def reasons(self, supported=False):
+        stem = "Supported" if supported else "Current"
+        current = self.query(f"nvmlDeviceGet{stem}ClocksEventReasons")
+        if current["status"] == "api_unavailable":
+            current = self.query(f"nvmlDeviceGet{stem}ClocksThrottleReasons")
+        return current
+
+    def metadata(self):
+        fields = {"name": ("nvmlDeviceGetName",), "vbios_version": ("nvmlDeviceGetVbiosVersion",),
+                  "power_limit_w": ("nvmlDeviceGetPowerManagementLimit",),
+                  "power_default_limit_w": ("nvmlDeviceGetPowerManagementDefaultLimit",),
+                  "persistence_mode": ("nvmlDeviceGetPersistenceMode",),
+                  "pcie_generation": ("nvmlDeviceGetCurrPcieLinkGeneration",),
+                  "pcie_width": ("nvmlDeviceGetCurrPcieLinkWidth",),
+                  "pcie_max_generation": ("nvmlDeviceGetMaxPcieLinkGeneration",),
+                  "pcie_max_width": ("nvmlDeviceGetMaxPcieLinkWidth",),
+                  "supported_memory_clocks_mhz": ("nvmlDeviceGetSupportedMemoryClocks",),
+                  "max_sm_clock_mhz": ("nvmlDeviceGetMaxClockInfo", 1)}
+        result = {name: self.query(*args, scale=1000 if name.startswith("power_") else 1)
+                  for name, args in fields.items()}
+        memories = result["supported_memory_clocks_mhz"]["value"]
+        result["supported_graphics_clocks_mhz"] = (
+            {str(clock): self.query("nvmlDeviceGetSupportedGraphicsClocks", clock) for clock in memories}
+            if memories is not None else unavailable("memory_clocks_unavailable"))
+        result["supported_clock_event_reasons"] = self.reasons(supported=True)
+        result["driver_version"] = (read_value(lambda: self.nvml.nvmlSystemGetDriverVersion())
+                                    if self.initialized else unavailable(self.reason))
+        result["visibility_note"] = "Guest-visible PCIe and persistence values may be limited by passthrough"
+        return result
+
+    def sample(self):
+        return {"sm_clock_mhz": self.query("nvmlDeviceGetClockInfo", 1),
+                "power_w": self.query("nvmlDeviceGetPowerUsage", scale=1000),
+                "temperature_c": self.query("nvmlDeviceGetTemperature", 0),
+                "fan_percent": self.query("nvmlDeviceGetFanSpeed"),
+                "clock_event_reasons": self.reasons()}
+
+    def counters(self):
+        result = {}
+        for name, policy in (("power", 0), ("thermal", 1)):
+            field = self.query("nvmlDeviceGetViolationStatus", policy)
+            if field["status"] == "available":
+                value = field["value"]
+                field["value"] = {"violation_time_ns": int(value.violationTime), "reference_time_us": int(value.referenceTime)}
+            result[name] = field
+        return result
+
+
+def counter_deltas(before, after):
+    result = {}
+    for name in ("power", "thermal"):
+        a, b = before[name], after[name]
+        if a["value"] is None or b["value"] is None:
+            result[name] = unavailable("endpoint_unavailable")
+        elif (b["value"]["reference_time_us"] < a["value"]["reference_time_us"]
+              or b["value"]["violation_time_ns"] < a["value"]["violation_time_ns"]):
+            result[name] = unavailable("counter_reset")
+        else:
+            result[name] = {"status": "available", "value": b["value"]["violation_time_ns"] - a["value"]["violation_time_ns"]}
+    return result
+
+
+def sample_summary(samples):
+    summaries = {}
+    for name in ("sm_clock_mhz", "power_w", "temperature_c", "fan_percent"):
+        values = [s[name]["value"] for s in samples if s[name]["status"] == "available"]
+        summaries[name] = {"status": "available" if values else "unavailable",
+                           "reason": None if values else "no_available_field_samples",
+                           "available_samples": len(values), "unavailable_samples": len(samples) - len(values),
+                           "min": min(values) if values else None, "max": max(values) if values else None,
+                           "mean": statistics.mean(values) if values else None}
+    return summaries
+
+
+class Sampler:
+    """Samples warm-up + queued measurement, excluding FP64 endpoint checks.
+
+    The first sample and counter endpoints are synchronous outside CUDA events.
+    Polling cannot guarantee detection of short clock events.
+    """
+    def __init__(self, session, interval, enabled=True):
+        if not math.isfinite(interval) or interval <= 0:
+            raise ValueError("sampling interval must be positive and finite")
+        self.session, self.interval = session, interval
+        self.samples = []
+        self.stop_event = threading.Event()
+        self.thread = None
+        self.before = self.after = None
+        self.error = None
+        self.enabled = enabled
+        self.timed_start = self.timed_end = None
+
+    def _sample(self, source="poll"):
+        start = time.perf_counter() - self.started
+        values = self.session.sample()
+        self.samples.append({"elapsed_seconds": start, "completed_seconds": time.perf_counter() - self.started,
+                             "source": source, **values})
+
+    def begin_timed(self):
+        self.timed_start = time.perf_counter() - self.started
+
+    def end_timed(self):
+        self.timed_end = time.perf_counter() - self.started
+
+    def _worker(self):
+        try:
+            while not self.stop_event.wait(self.interval):
+                self._sample()
+        except Exception:
+            self.error = "sampling_failed"
+
+    def __enter__(self):
+        self.started = time.perf_counter()
+        self.before = self.session.counters()
+        self._sample("endpoint_before")
+        if self.enabled:
+            self.thread = threading.Thread(target=self._worker, name="nvml-telemetry", daemon=True)
+            self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop_event.set()
+        if self.thread is not None:
+            self.thread.join()
+        self._sample("endpoint_after")
+        self.after = self.session.counters()
+        self.duration = time.perf_counter() - self.started
+
+    def result(self):
+        timed = [s for s in self.samples if self.timed_start is not None and self.timed_end is not None
+                 and s["source"] == "poll" and self.timed_start <= s["elapsed_seconds"]
+                 and s["completed_seconds"] <= self.timed_end]
+        summaries = sample_summary(self.samples)
+        masks = [s["clock_event_reasons"]["value"] for s in self.samples if s["clock_event_reasons"]["status"] == "available"]
+        return {"status": "partial" if self.error else self.session.status, "error": self.error,
+                "polling_enabled": self.enabled,
+                "timed_coverage": {"sample_count": len(timed), "status": "available" if timed else "missing",
+                                   "reason": None if timed else ("no_complete_poll_in_timed_window" if self.enabled else "polling_disabled"),
+                                   "start_seconds": self.timed_start, "end_seconds": self.timed_end},
+                "scope": "warmup_and_queued_timing_excludes_accuracy_checks",
+                "sampling_interval_seconds": self.interval, "duration_seconds": self.duration,
+                "sample_count": len(self.samples), "samples": self.samples, "summary": summaries,
+                "summary_scope": "all_samples_including_warmup_and_endpoints",
+                "timed_summary": sample_summary(timed),
+                "timed_summary_scope": "complete_polls_inside_timed_window_only",
+                "clock_events": {"available_samples": len(masks),
+                                 "observed_samples_by_reason": {name: sum(bool(mask & bit) for mask in masks) if masks else None for name, bit in REASONS.items()},
+                                 "note": "Counts are sampled active observations, not event transitions; brief events may be missed"},
+                "violation_counters": {"before": self.before, "after": self.after,
+                                       "delta_ns": counter_deltas(self.before, self.after),
+                                       "note": "Legacy NVML policy duration counters, not event counts; unsupported stays unavailable"}}
