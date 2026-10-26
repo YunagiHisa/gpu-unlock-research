@@ -40,7 +40,7 @@ class TestMeasurement(unittest.TestCase):
                     gemm.configure_mode(torch, "fp16")
 
     def test_reference_budget_includes_k(self):
-        args = gemm.parse_args(["--mode", "fp32", "--m", "64", "--n", "64", "--k", "64",
+        args = gemm.parse_args(["--gpu", "0", "--requested-state", "before", "--execution-kind", "diagnostic", "--mode", "fp32", "--m", "64", "--n", "64", "--k", "64",
                                 "--full-reference-max-flops", str(2 * 64**3)])
         self.assertTrue(gemm.use_full_reference(args))
         args.k = 65

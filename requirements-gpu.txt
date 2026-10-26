@@ -1,0 +1,3 @@
+# CPU tests use only the Python standard library; install these only for GPU runs.
+torch>=2.11,<3
+nvidia-ml-py>=12,<14

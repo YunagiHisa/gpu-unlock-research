@@ -6,6 +6,25 @@ import statistics
 from typing import Sequence
 
 MODES = ("fp16", "bf16", "tf32", "fp32")
+MAX_TIMING_SAMPLES = 10000  # At most 20,000 retained CUDA Events per measurement.
+
+
+def select_samples(samples, min_seconds, estimated_ms):
+    if not 1 <= samples <= MAX_TIMING_SAMPLES:
+        raise ValueError("samples outside bounded CUDA Event budget")
+    selected = samples
+    capped = False
+    if min_seconds is not None:
+        if not math.isfinite(min_seconds) or min_seconds <= 0:
+            raise ValueError("minimum timed seconds must be positive and finite")
+        if estimated_ms is not None and math.isfinite(estimated_ms) and estimated_ms > 0:
+            required = min_seconds / (estimated_ms / 1000)
+            capped = required > MAX_TIMING_SAMPLES
+            selected = max(samples, MAX_TIMING_SAMPLES if capped else math.ceil(required))
+    return {"requested_samples": samples, "selected_samples": selected, "max_samples": MAX_TIMING_SAMPLES,
+            "min_timed_seconds": min_seconds, "estimated_gemm_ms": estimated_ms,
+            "estimate_status": "available" if estimated_ms is not None else "unavailable",
+            "sample_cap_reached": capped, "predicted_timed_seconds": selected * estimated_ms / 1000 if estimated_ms is not None else None}
 
 
 def validate_dimensions(m: int, n: int, k: int) -> None:
