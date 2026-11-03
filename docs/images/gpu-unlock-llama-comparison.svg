@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="800" viewBox="0 0 1120 800" role="img">
+<title>llama.cpp: prefill and token generation</title><desc>Three-phase means normalized to Before. Error bars show process SD divided by the fixed Before mean, not confidence intervals.</desc>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="32.000" y="36.000" font-family="sans-serif" font-size="23" text-anchor="start" fill="#243447" font-weight="bold">llama.cpp: prefill and token generation</text>
+<rect x="32.000000" y="57.000000" width="16.000000" height="12.000000" fill="#526d82"/>
+<text x="55.000" y="68.000" font-family="sans-serif" font-size="13" text-anchor="start" fill="#243447" font-weight="normal">Before</text>
+<rect x="172.000000" y="57.000000" width="16.000000" height="12.000000" fill="#07856f"/>
+<text x="195.000" y="68.000" font-family="sans-serif" font-size="13" text-anchor="start" fill="#243447" font-weight="normal">After</text>
+<rect x="312.000000" y="57.000000" width="16.000000" height="12.000000" fill="#c77816"/>
+<text x="335.000" y="68.000" font-family="sans-serif" font-size="13" text-anchor="start" fill="#243447" font-weight="normal">Reverted</text>
+<line x1="300.000" y1="105.000" x2="300.000" y2="697.000" stroke="#dce3e9" stroke-width="1"/>
+<text x="300.000" y="720.000" font-family="sans-serif" font-size="13" text-anchor="middle" fill="#243447" font-weight="normal">0×</text>
+<line x1="436.000" y1="105.000" x2="436.000" y2="697.000" stroke="#dce3e9" stroke-width="1"/>
+<text x="436.000" y="720.000" font-family="sans-serif" font-size="13" text-anchor="middle" fill="#243447" font-weight="normal">0.25×</text>
+<line x1="572.000" y1="105.000" x2="572.000" y2="697.000" stroke="#dce3e9" stroke-width="1"/>
+<text x="572.000" y="720.000" font-family="sans-serif" font-size="13" text-anchor="middle" fill="#243447" font-weight="normal">0.5×</text>
+<line x1="708.000" y1="105.000" x2="708.000" y2="697.000" stroke="#dce3e9" stroke-width="1"/>
+<text x="708.000" y="720.000" font-family="sans-serif" font-size="13" text-anchor="middle" fill="#243447" font-weight="normal">0.75×</text>
+<line x1="844.000" y1="105.000" x2="844.000" y2="697.000" stroke="#dce3e9" stroke-width="1"/>
+<text x="844.000" y="720.000" font-family="sans-serif" font-size="13" text-anchor="middle" fill="#243447" font-weight="normal">1×</text>
+<line x1="980.000" y1="105.000" x2="980.000" y2="697.000" stroke="#dce3e9" stroke-width="1"/>
+<text x="980.000" y="720.000" font-family="sans-serif" font-size="13" text-anchor="middle" fill="#243447" font-weight="normal">1.25×</text>
+<line x1="844.000" y1="105.000" x2="844.000" y2="697.000" stroke="#6a7883" stroke-width="1.5"/>
+<text x="32.000" y="110.000" font-family="sans-serif" font-size="17" text-anchor="start" fill="#243447" font-weight="bold">Prefill</text>
+<text x="32.000" y="451.000" font-family="sans-serif" font-size="17" text-anchor="start" fill="#243447" font-weight="bold">Token generation</text>
+<text x="284.000" y="153.000" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">Qwen3.8-27B Q4_K_M</text>
+<text x="284.000" y="170.000" font-family="sans-serif" font-size="12" text-anchor="end" fill="#576776" font-weight="normal">pp512</text>
+<rect x="300.000000" y="128.000000" width="544.000000" height="10.000000" fill="#526d82" class="data-bar" data-kind="llama" data-model="Qwen3.8-27B" data-quantization="Q4_K_M" data-benchmark="pp512" data-phase="before" data-value="751.6734383333334" data-sd="1.5389003879960546" data-normalized="1.0"/>
+<line x1="842.886" y1="133.000" x2="845.114" y2="133.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="842.886" y1="129.000" x2="842.886" y2="137.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="845.114" y1="129.000" x2="845.114" y2="137.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="143.000000" width="545.114843" height="10.000000" fill="#07856f" class="data-bar" data-kind="llama" data-model="Qwen3.8-27B" data-quantization="Q4_K_M" data-benchmark="pp512" data-phase="after" data-value="753.2138756666667" data-sd="1.8504842988929626" data-normalized="1.0020493438437161"/>
+<line x1="843.776" y1="148.000" x2="846.454" y2="148.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.776" y1="144.000" x2="843.776" y2="152.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="846.454" y1="144.000" x2="846.454" y2="152.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="158.000000" width="543.648788" height="10.000000" fill="#c77816" class="data-bar" data-kind="llama" data-model="Qwen3.8-27B" data-quantization="Q4_K_M" data-benchmark="pp512" data-phase="reverted" data-value="751.1881506666666" data-sd="1.6043157377930064" data-normalized="0.9993543902951489"/>
+<line x1="842.488" y1="163.000" x2="844.810" y2="163.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="842.488" y1="159.000" x2="842.488" y2="167.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.810" y1="159.000" x2="844.810" y2="167.000" stroke="#182b38" stroke-width="1.5"/>
+<text x="1000.000" y="148.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">A/B +0.20%</text>
+<text x="1000.000" y="166.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">R/B -0.06%</text>
+<text x="284.000" y="229.000" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">Qwen3.8-27B Q4_K_M</text>
+<text x="284.000" y="246.000" font-family="sans-serif" font-size="12" text-anchor="end" fill="#576776" font-weight="normal">pp2048</text>
+<rect x="300.000000" y="204.000000" width="544.000000" height="10.000000" fill="#526d82" class="data-bar" data-kind="llama" data-model="Qwen3.8-27B" data-quantization="Q4_K_M" data-benchmark="pp2048" data-phase="before" data-value="735.7585116666667" data-sd="0.4029348142942894" data-normalized="1.0"/>
+<line x1="843.702" y1="209.000" x2="844.298" y2="209.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.702" y1="205.000" x2="843.702" y2="213.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.298" y1="205.000" x2="844.298" y2="213.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="219.000000" width="546.794434" height="10.000000" fill="#07856f" class="data-bar" data-kind="llama" data-model="Qwen3.8-27B" data-quantization="Q4_K_M" data-benchmark="pp2048" data-phase="after" data-value="739.5379756666666" data-sd="0.4386584059610891" data-normalized="1.0051368267441971"/>
+<line x1="846.470" y1="224.000" x2="847.119" y2="224.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="846.470" y1="220.000" x2="846.470" y2="228.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="847.119" y1="220.000" x2="847.119" y2="228.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="234.000000" width="543.926781" height="10.000000" fill="#c77816" class="data-bar" data-kind="llama" data-model="Qwen3.8-27B" data-quantization="Q4_K_M" data-benchmark="pp2048" data-phase="reverted" data-value="735.6594836666667" data-sd="0.5225067536954531" data-normalized="0.9998654069257376"/>
+<line x1="843.540" y1="239.000" x2="844.313" y2="239.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.540" y1="235.000" x2="843.540" y2="243.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.313" y1="235.000" x2="844.313" y2="243.000" stroke="#182b38" stroke-width="1.5"/>
+<text x="1000.000" y="224.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">A/B +0.51%</text>
+<text x="1000.000" y="242.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">R/B -0.01%</text>
+<text x="284.000" y="305.000" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">Qwen3-8B Q4_K_M</text>
+<text x="284.000" y="322.000" font-family="sans-serif" font-size="12" text-anchor="end" fill="#576776" font-weight="normal">pp512</text>
+<rect x="300.000000" y="280.000000" width="544.000000" height="10.000000" fill="#526d82" class="data-bar" data-kind="llama" data-model="Qwen3-8B" data-quantization="Q4_K_M" data-benchmark="pp512" data-phase="before" data-value="2132.06518" data-sd="0.5289398380014176" data-normalized="1.0"/>
+<line x1="843.865" y1="285.000" x2="844.135" y2="285.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.865" y1="281.000" x2="843.865" y2="289.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.135" y1="281.000" x2="844.135" y2="289.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="295.000000" width="546.543731" height="10.000000" fill="#07856f" class="data-bar" data-kind="llama" data-model="Qwen3-8B" data-quantization="Q4_K_M" data-benchmark="pp512" data-phase="after" data-value="2142.0346646666667" data-sd="6.089697309267749" data-normalized="1.004675975556557"/>
+<line x1="844.990" y1="300.000" x2="848.098" y2="300.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.990" y1="296.000" x2="844.990" y2="304.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="848.098" y1="296.000" x2="848.098" y2="304.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="310.000000" width="543.756929" height="10.000000" fill="#c77816" class="data-bar" data-kind="llama" data-model="Qwen3-8B" data-quantization="Q4_K_M" data-benchmark="pp512" data-phase="reverted" data-value="2131.112527333333" data-sd="0.16255474666810338" data-normalized="0.9995531784508264"/>
+<line x1="843.715" y1="315.000" x2="843.798" y2="315.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.715" y1="311.000" x2="843.715" y2="319.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.798" y1="311.000" x2="843.798" y2="319.000" stroke="#182b38" stroke-width="1.5"/>
+<text x="1000.000" y="300.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">A/B +0.47%</text>
+<text x="1000.000" y="318.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">R/B -0.04%</text>
+<text x="284.000" y="381.000" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">Qwen3-8B BF16</text>
+<text x="284.000" y="398.000" font-family="sans-serif" font-size="12" text-anchor="end" fill="#576776" font-weight="normal">pp512</text>
+<rect x="300.000000" y="356.000000" width="544.000000" height="10.000000" fill="#526d82" class="data-bar" data-kind="llama" data-model="Qwen3-8B" data-quantization="BF16" data-benchmark="pp512" data-phase="before" data-value="1766.5964433333334" data-sd="0.25511056520913666" data-normalized="1.0"/>
+<line x1="843.921" y1="361.000" x2="844.079" y2="361.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.921" y1="357.000" x2="843.921" y2="365.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.079" y1="357.000" x2="844.079" y2="365.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="371.000000" width="632.723885" height="10.000000" fill="#07856f" class="data-bar" data-kind="llama" data-model="Qwen3-8B" data-quantization="BF16" data-benchmark="pp512" data-phase="after" data-value="2054.7201546666665" data-sd="2.357820421309653" data-normalized="1.1630953760948832"/>
+<line x1="931.998" y1="376.000" x2="933.450" y2="376.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="931.998" y1="372.000" x2="931.998" y2="380.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="933.450" y1="372.000" x2="933.450" y2="380.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="386.000000" width="542.222822" height="10.000000" fill="#c77816" class="data-bar" data-kind="llama" data-model="Qwen3-8B" data-quantization="BF16" data-benchmark="pp512" data-phase="reverted" data-value="1760.8252003333332" data-sd="5.454306603378266" data-normalized="0.996733128824198"/>
+<line x1="840.543" y1="391.000" x2="843.902" y2="391.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="840.543" y1="387.000" x2="840.543" y2="395.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.902" y1="387.000" x2="843.902" y2="395.000" stroke="#182b38" stroke-width="1.5"/>
+<text x="1000.000" y="376.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">A/B +16.31%</text>
+<text x="1000.000" y="394.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">R/B -0.33%</text>
+<text x="284.000" y="494.000" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">Qwen3.8-27B Q4_K_M</text>
+<text x="284.000" y="511.000" font-family="sans-serif" font-size="12" text-anchor="end" fill="#576776" font-weight="normal">tg128</text>
+<rect x="300.000000" y="469.000000" width="544.000000" height="10.000000" fill="#526d82" class="data-bar" data-kind="llama" data-model="Qwen3.8-27B" data-quantization="Q4_K_M" data-benchmark="tg128" data-phase="before" data-value="28.916522333333333" data-sd="0.025289913490031485" data-normalized="1.0"/>
+<line x1="843.524" y1="474.000" x2="844.476" y2="474.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.524" y1="470.000" x2="843.524" y2="478.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.476" y1="470.000" x2="844.476" y2="478.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="484.000000" width="544.127400" height="10.000000" fill="#07856f" class="data-bar" data-kind="llama" data-model="Qwen3.8-27B" data-quantization="Q4_K_M" data-benchmark="tg128" data-phase="after" data-value="28.923294333333335" data-sd="0.026725217124157152" data-normalized="1.0002341913706614"/>
+<line x1="843.625" y1="489.000" x2="844.630" y2="489.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.625" y1="485.000" x2="843.625" y2="493.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.630" y1="485.000" x2="844.630" y2="493.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="499.000000" width="543.672169" height="10.000000" fill="#c77816" class="data-bar" data-kind="llama" data-model="Qwen3.8-27B" data-quantization="Q4_K_M" data-benchmark="tg128" data-phase="reverted" data-value="28.899096333333333" data-sd="0.03805747115000353" data-normalized="0.9993973687499789"/>
+<line x1="842.956" y1="504.000" x2="844.388" y2="504.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="842.956" y1="500.000" x2="842.956" y2="508.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.388" y1="500.000" x2="844.388" y2="508.000" stroke="#182b38" stroke-width="1.5"/>
+<text x="1000.000" y="489.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">A/B +0.02%</text>
+<text x="1000.000" y="507.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">R/B -0.06%</text>
+<text x="284.000" y="570.000" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">Qwen3-8B Q4_K_M</text>
+<text x="284.000" y="587.000" font-family="sans-serif" font-size="12" text-anchor="end" fill="#576776" font-weight="normal">tg128</text>
+<rect x="300.000000" y="545.000000" width="544.000000" height="10.000000" fill="#526d82" class="data-bar" data-kind="llama" data-model="Qwen3-8B" data-quantization="Q4_K_M" data-benchmark="tg128" data-phase="before" data-value="94.87270533333333" data-sd="0.08504009746779916" data-normalized="1.0"/>
+<line x1="843.512" y1="550.000" x2="844.488" y2="550.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.512" y1="546.000" x2="843.512" y2="554.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.488" y1="546.000" x2="844.488" y2="554.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="560.000000" width="544.298049" height="10.000000" fill="#07856f" class="data-bar" data-kind="llama" data-model="Qwen3-8B" data-quantization="Q4_K_M" data-benchmark="tg128" data-phase="after" data-value="94.92468466666666" data-sd="0.018576107351463998" data-normalized="1.000547885012351"/>
+<line x1="844.192" y1="565.000" x2="844.405" y2="565.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.192" y1="561.000" x2="844.192" y2="569.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.405" y1="561.000" x2="844.405" y2="569.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="575.000000" width="544.574765" height="10.000000" fill="#c77816" class="data-bar" data-kind="llama" data-model="Qwen3-8B" data-quantization="Q4_K_M" data-benchmark="tg128" data-phase="reverted" data-value="94.97294333333333" data-sd="0.07201386651425835" data-normalized="1.001056552563225"/>
+<line x1="844.162" y1="580.000" x2="844.988" y2="580.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.162" y1="576.000" x2="844.162" y2="584.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.988" y1="576.000" x2="844.988" y2="584.000" stroke="#182b38" stroke-width="1.5"/>
+<text x="1000.000" y="565.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">A/B +0.05%</text>
+<text x="1000.000" y="583.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">R/B +0.11%</text>
+<text x="284.000" y="646.000" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">Qwen3-8B BF16</text>
+<text x="284.000" y="663.000" font-family="sans-serif" font-size="12" text-anchor="end" fill="#576776" font-weight="normal">tg128</text>
+<rect x="300.000000" y="621.000000" width="544.000000" height="10.000000" fill="#526d82" class="data-bar" data-kind="llama" data-model="Qwen3-8B" data-quantization="BF16" data-benchmark="tg128" data-phase="before" data-value="39.199756666666666" data-sd="0.03512254172655055" data-normalized="1.0"/>
+<line x1="843.513" y1="626.000" x2="844.487" y2="626.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.513" y1="622.000" x2="843.513" y2="630.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.487" y1="622.000" x2="844.487" y2="630.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="636.000000" width="543.629634" height="10.000000" fill="#07856f" class="data-bar" data-kind="llama" data-model="Qwen3-8B" data-quantization="BF16" data-benchmark="tg128" data-phase="after" data-value="39.173068666666666" data-sd="0.009186817312503351" data-normalized="0.9993191794472874"/>
+<line x1="843.502" y1="641.000" x2="843.757" y2="641.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.502" y1="637.000" x2="843.502" y2="645.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.757" y1="637.000" x2="843.757" y2="645.000" stroke="#182b38" stroke-width="1.5"/>
+<rect x="300.000000" y="651.000000" width="543.761018" height="10.000000" fill="#c77816" class="data-bar" data-kind="llama" data-model="Qwen3-8B" data-quantization="BF16" data-benchmark="tg128" data-phase="reverted" data-value="39.182536" data-sd="0.01887616865256227" data-normalized="0.9995606945519304"/>
+<line x1="843.499" y1="656.000" x2="844.023" y2="656.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="843.499" y1="652.000" x2="843.499" y2="660.000" stroke="#182b38" stroke-width="1.5"/>
+<line x1="844.023" y1="652.000" x2="844.023" y2="660.000" stroke="#182b38" stroke-width="1.5"/>
+<text x="1000.000" y="641.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">A/B -0.07%</text>
+<text x="1000.000" y="659.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">R/B -0.04%</text>
+<text x="32.000" y="755.000" font-family="sans-serif" font-size="13" text-anchor="start" fill="#243447" font-weight="normal">Bars: 3 independent process means, each process containing 5 repeats; Before mean = 1×.</text>
+<text x="32.000" y="778.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">Whiskers: process SD / fixed Before mean. Absolute tok/s and SDs are in the CSV.</text>
+</svg>

@@ -102,7 +102,7 @@ class TestReviewRegressions(unittest.TestCase):
         session.close()
         nvml.nvmlShutdown.assert_called_once()
 
-    def run_preflight(self, execution_kind="formal", other_count=0, uuid_match=True, temperature_status="passed", after_count=None):
+    def run_preflight(self, execution_kind="formal", other_count=0, uuid_match=True, temperature_status="passed", after_count=None, strict=False):
         torch = MagicMock()
         torch.__version__ = "test"
         torch.version.cuda = "test"
@@ -120,6 +120,7 @@ class TestReviewRegressions(unittest.TestCase):
         session.compute_process_count.side_effect = [counts(other_count), counts(other_count), counts(after_count if after_count is not None else other_count)]
         temperature = {"status": temperature_status, "passed": temperature_status == "passed", "reason": None if temperature_status == "passed" else "cooldown_timeout" if temperature_status == "timeout" else "start_temperature_unavailable"}
         args = gemm.parse_args(BASE + ["--execution-kind", execution_kind])
+        args.strict_preflight = strict
         with patch.dict("sys.modules", {"torch": torch}), patch.object(gemm, "NvmlSession", return_value=session), \
              patch.object(gemm, "cuda_pci_bus_id", return_value="0000:01:00.0"), \
              patch.object(gemm, "configure_mode", return_value={}), patch.object(gemm, "environment_metadata", return_value={}), \
@@ -149,6 +150,15 @@ class TestReviewRegressions(unittest.TestCase):
             self.assertEqual(result["execution_kind"], "diagnostic")
             self.assertIn("other_compute_processes_present", result["baseline_ineligibility_reasons"])
         self.assertEqual(contention_reasons({}), ["other_compute_processes_unknown"])
+
+    def test_strict_diagnostic_preserves_formal_safety_gates(self):
+        for conditions in ({'other_count':1}, {'other_count':None}, {'uuid_match':False},
+                           {'temperature_status':'unavailable'}, {'temperature_status':'timeout'}):
+            result, torch, session = self.run_preflight(execution_kind='diagnostic', strict=True, **conditions)
+            self.assertEqual(result['status'], 'preflight_blocked')
+            torch.randn.assert_not_called()
+            torch.mm.assert_not_called()
+            session.close.assert_called_once()
 
     def test_phase_boundaries_exclude_reads_crossing_either_edge(self):
         session = NvmlSession(None)

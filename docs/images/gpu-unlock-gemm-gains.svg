@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="820" viewBox="0 0 1120 820" role="img">
+<title>GEMM improvement by GPU, precision and matrix size</title><desc>After versus Before ratios of three-process means, covering all 24 GEMM configurations.</desc>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="32.000" y="36.000" font-family="sans-serif" font-size="23" text-anchor="start" fill="#243447" font-weight="bold">GEMM improvement by GPU, precision and matrix size</text>
+<rect x="32.000000" y="58.000000" width="16.000000" height="12.000000" fill="#6c83b5"/>
+<text x="55.000" y="70.000" font-family="sans-serif" font-size="13" text-anchor="start" fill="#243447" font-weight="normal">2048³</text>
+<rect x="172.000000" y="58.000000" width="16.000000" height="12.000000" fill="#15877a"/>
+<text x="195.000" y="70.000" font-family="sans-serif" font-size="13" text-anchor="start" fill="#243447" font-weight="normal">4096³</text>
+<rect x="312.000000" y="58.000000" width="16.000000" height="12.000000" fill="#c77816"/>
+<text x="335.000" y="70.000" font-family="sans-serif" font-size="13" text-anchor="start" fill="#243447" font-weight="normal">8192³</text>
+<text x="32.000" y="103.000" font-family="sans-serif" font-size="18" text-anchor="start" fill="#243447" font-weight="bold">GPU 0</text>
+<line x1="88.000" y1="342.368" x2="1078.000" y2="342.368" stroke="#dce3e9" stroke-width="1"/>
+<text x="78.000" y="346.368" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">0%</text>
+<line x1="88.000" y1="291.842" x2="1078.000" y2="291.842" stroke="#dce3e9" stroke-width="1"/>
+<text x="78.000" y="295.842" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">20%</text>
+<line x1="88.000" y1="241.316" x2="1078.000" y2="241.316" stroke="#dce3e9" stroke-width="1"/>
+<text x="78.000" y="245.316" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">40%</text>
+<line x1="88.000" y1="190.789" x2="1078.000" y2="190.789" stroke="#dce3e9" stroke-width="1"/>
+<text x="78.000" y="194.789" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">60%</text>
+<line x1="88.000" y1="140.263" x2="1078.000" y2="140.263" stroke="#dce3e9" stroke-width="1"/>
+<text x="78.000" y="144.263" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">80%</text>
+<line x1="88.000" y1="342.368" x2="1078.000" y2="342.368" stroke="#6a7883" stroke-width="1"/>
+<rect x="137.750000" y="184.602062" width="42.000000" height="157.766359" fill="#6c83b5" class="data-bar" data-kind="gain" data-gpu="0" data-mode="fp16" data-size="2048" data-value="62.44918367356234"/>
+<text x="158.750" y="176.602" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+62.45</text>
+<rect x="190.750000" y="144.108833" width="42.000000" height="198.259588" fill="#15877a" class="data-bar" data-kind="gain" data-gpu="0" data-mode="fp16" data-size="4096" data-value="78.47775370278265"/>
+<text x="211.750" y="136.109" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+78.48</text>
+<rect x="243.750000" y="147.223437" width="42.000000" height="195.144984" fill="#c77816" class="data-bar" data-kind="gain" data-gpu="0" data-mode="fp16" data-size="8192" data-value="77.24488950953511"/>
+<text x="264.750" y="139.223" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+77.24</text>
+<text x="211.750" y="395.000" font-family="sans-serif" font-size="15" text-anchor="middle" fill="#243447" font-weight="normal">FP16</text>
+<rect x="385.250000" y="177.395938" width="42.000000" height="164.972483" fill="#6c83b5" class="data-bar" data-kind="gain" data-gpu="0" data-mode="bf16" data-size="2048" data-value="65.30160788824317"/>
+<text x="406.250" y="169.396" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+65.30</text>
+<rect x="438.250000" y="138.375999" width="42.000000" height="203.992422" fill="#15877a" class="data-bar" data-kind="gain" data-gpu="0" data-mode="bf16" data-size="4096" data-value="80.7470002528693"/>
+<text x="459.250" y="130.376" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+80.75</text>
+<rect x="491.250000" y="140.003087" width="42.000000" height="202.365334" fill="#c77816" class="data-bar" data-kind="gain" data-gpu="0" data-mode="bf16" data-size="8192" data-value="80.10294482033065"/>
+<text x="512.250" y="132.003" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+80.10</text>
+<text x="459.250" y="395.000" font-family="sans-serif" font-size="15" text-anchor="middle" fill="#243447" font-weight="normal">BF16</text>
+<rect x="632.750000" y="159.583588" width="42.000000" height="182.784833" fill="#6c83b5" class="data-bar" data-kind="gain" data-gpu="0" data-mode="tf32" data-size="2048" data-value="72.35232961793176"/>
+<text x="653.750" y="151.584" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+72.35</text>
+<rect x="685.750000" y="144.488239" width="42.000000" height="197.880182" fill="#15877a" class="data-bar" data-kind="gain" data-gpu="0" data-mode="tf32" data-size="4096" data-value="78.32757198315757"/>
+<text x="706.750" y="136.488" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+78.33</text>
+<rect x="738.750000" y="142.549326" width="42.000000" height="199.819095" fill="#c77816" class="data-bar" data-kind="gain" data-gpu="0" data-mode="tf32" data-size="8192" data-value="79.095058627407"/>
+<text x="759.750" y="134.549" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+79.10</text>
+<text x="706.750" y="395.000" font-family="sans-serif" font-size="15" text-anchor="middle" fill="#243447" font-weight="normal">TF32</text>
+<rect x="880.250000" y="342.368421" width="42.000000" height="0.147955" fill="#6c83b5" class="data-bar" data-kind="gain" data-gpu="0" data-mode="fp32" data-size="2048" data-value="-0.05856560071322292"/>
+<text x="901.250" y="360.368" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">-0.06</text>
+<rect x="933.250000" y="342.368421" width="42.000000" height="0.598182" fill="#15877a" class="data-bar" data-kind="gain" data-gpu="0" data-mode="fp32" data-size="4096" data-value="-0.2367803173956795"/>
+<text x="954.250" y="360.368" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">-0.24</text>
+<rect x="986.250000" y="342.368421" width="42.000000" height="0.074671" fill="#c77816" class="data-bar" data-kind="gain" data-gpu="0" data-mode="fp32" data-size="8192" data-value="-0.02955730431744019"/>
+<text x="1007.250" y="360.368" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">-0.03</text>
+<text x="954.250" y="395.000" font-family="sans-serif" font-size="15" text-anchor="middle" fill="#243447" font-weight="normal">FP32 IEEE</text>
+<text x="32.000" y="438.000" font-family="sans-serif" font-size="18" text-anchor="start" fill="#243447" font-weight="bold">GPU 1</text>
+<line x1="88.000" y1="677.368" x2="1078.000" y2="677.368" stroke="#dce3e9" stroke-width="1"/>
+<text x="78.000" y="681.368" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">0%</text>
+<line x1="88.000" y1="626.842" x2="1078.000" y2="626.842" stroke="#dce3e9" stroke-width="1"/>
+<text x="78.000" y="630.842" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">20%</text>
+<line x1="88.000" y1="576.316" x2="1078.000" y2="576.316" stroke="#dce3e9" stroke-width="1"/>
+<text x="78.000" y="580.316" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">40%</text>
+<line x1="88.000" y1="525.789" x2="1078.000" y2="525.789" stroke="#dce3e9" stroke-width="1"/>
+<text x="78.000" y="529.789" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">60%</text>
+<line x1="88.000" y1="475.263" x2="1078.000" y2="475.263" stroke="#dce3e9" stroke-width="1"/>
+<text x="78.000" y="479.263" font-family="sans-serif" font-size="13" text-anchor="end" fill="#243447" font-weight="normal">80%</text>
+<line x1="88.000" y1="677.368" x2="1078.000" y2="677.368" stroke="#6a7883" stroke-width="1"/>
+<rect x="137.750000" y="518.127984" width="42.000000" height="159.240437" fill="#6c83b5" class="data-bar" data-kind="gain" data-gpu="1" data-mode="fp16" data-size="2048" data-value="63.032673174057564"/>
+<text x="158.750" y="510.128" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+63.03</text>
+<rect x="190.750000" y="487.190594" width="42.000000" height="190.177827" fill="#15877a" class="data-bar" data-kind="gain" data-gpu="1" data-mode="fp16" data-size="4096" data-value="75.27872304108921"/>
+<text x="211.750" y="479.191" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+75.28</text>
+<rect x="243.750000" y="487.668751" width="42.000000" height="189.699670" fill="#c77816" class="data-bar" data-kind="gain" data-gpu="1" data-mode="fp16" data-size="8192" data-value="75.08945284198303"/>
+<text x="264.750" y="479.669" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+75.09</text>
+<text x="211.750" y="730.000" font-family="sans-serif" font-size="15" text-anchor="middle" fill="#243447" font-weight="normal">FP16</text>
+<rect x="385.250000" y="512.595485" width="42.000000" height="164.772936" fill="#6c83b5" class="data-bar" data-kind="gain" data-gpu="1" data-mode="bf16" data-size="2048" data-value="65.2226204237089"/>
+<text x="406.250" y="504.595" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+65.22</text>
+<rect x="438.250000" y="479.615609" width="42.000000" height="197.752812" fill="#15877a" class="data-bar" data-kind="gain" data-gpu="1" data-mode="bf16" data-size="4096" data-value="78.27715487708477"/>
+<text x="459.250" y="471.616" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+78.28</text>
+<rect x="491.250000" y="481.468288" width="42.000000" height="195.900133" fill="#c77816" class="data-bar" data-kind="gain" data-gpu="1" data-mode="bf16" data-size="8192" data-value="77.54380258613065"/>
+<text x="512.250" y="473.468" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+77.54</text>
+<text x="459.250" y="730.000" font-family="sans-serif" font-size="15" text-anchor="middle" fill="#243447" font-weight="normal">BF16</text>
+<rect x="632.750000" y="499.833309" width="42.000000" height="177.535112" fill="#6c83b5" class="data-bar" data-kind="gain" data-gpu="1" data-mode="tf32" data-size="2048" data-value="70.27431523683899"/>
+<text x="653.750" y="491.833" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+70.27</text>
+<rect x="685.750000" y="485.937465" width="42.000000" height="191.430956" fill="#15877a" class="data-bar" data-kind="gain" data-gpu="1" data-mode="tf32" data-size="4096" data-value="75.77475337815116"/>
+<text x="706.750" y="477.937" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+75.77</text>
+<rect x="738.750000" y="483.616572" width="42.000000" height="193.751849" fill="#c77816" class="data-bar" data-kind="gain" data-gpu="1" data-mode="tf32" data-size="8192" data-value="76.69344016216941"/>
+<text x="759.750" y="475.617" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">+76.69</text>
+<text x="706.750" y="730.000" font-family="sans-serif" font-size="15" text-anchor="middle" fill="#243447" font-weight="normal">TF32</text>
+<rect x="880.250000" y="677.368421" width="42.000000" height="0.014978" fill="#6c83b5" class="data-bar" data-kind="gain" data-gpu="1" data-mode="fp32" data-size="2048" data-value="-0.005928946668354307"/>
+<text x="901.250" y="695.368" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">-0.01</text>
+<rect x="933.250000" y="677.368421" width="42.000000" height="0.043957" fill="#15877a" class="data-bar" data-kind="gain" data-gpu="1" data-mode="fp32" data-size="4096" data-value="-0.01739961650073507"/>
+<text x="954.250" y="695.368" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">-0.02</text>
+<rect x="986.250000" y="677.368421" width="42.000000" height="0.301408" fill="#c77816" class="data-bar" data-kind="gain" data-gpu="1" data-mode="fp32" data-size="8192" data-value="-0.11930744863172249"/>
+<text x="1007.250" y="695.368" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#243447" font-weight="normal">-0.12</text>
+<text x="954.250" y="730.000" font-family="sans-serif" font-size="15" text-anchor="middle" fill="#243447" font-weight="normal">FP32 IEEE</text>
+<text x="32.000" y="765.000" font-family="sans-serif" font-size="13" text-anchor="start" fill="#243447" font-weight="normal">Bars: 100 × (After mean / Before mean − 1). No inferential error bars; process SDs are in the CSV.</text>
+<text x="32.000" y="790.000" font-family="sans-serif" font-size="12" text-anchor="start" fill="#243447" font-weight="normal">FP32 IEEE: −0.24% to −0.01%; its small negative bars sit near zero, not at exactly zero.</text>
+</svg>

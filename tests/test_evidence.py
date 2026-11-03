@@ -137,3 +137,10 @@ class TestEvidence(unittest.TestCase):
             self.assertNotIn("private", json.dumps(environment_metadata()))
         with patch("benchmarks.metadata.subprocess.run", side_effect=OSError("/private")):
             self.assertEqual(git_metadata(), {"commit": None, "dirty": None})
+
+    def test_git_metadata_separates_known_untracked_files(self):
+        replies = [SimpleNamespace(returncode=0, stdout=s) for s in
+                   ('a'*40, '?? notes.txt\n', '', 'notes.txt\n')]
+        with patch('benchmarks.metadata.subprocess.run', side_effect=replies):
+            self.assertEqual(git_metadata(), dict(commit='a'*40, dirty=True,
+                tracked_dirty=False, untracked_files=['notes.txt']))

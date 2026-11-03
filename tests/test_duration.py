@@ -62,7 +62,7 @@ class TestDuration(unittest.TestCase):
 
     def test_sample_compatibility_estimation_and_event_budget(self):
         self.assertEqual(select_samples(30, None, None)["selected_samples"], 30)
-        self.assertEqual(select_samples(30, 1, 10)["selected_samples"], 100)
+        self.assertEqual(select_samples(30, 1, 10)["selected_samples"], 105)
         self.assertEqual(select_samples(300, 1, 10)["selected_samples"], 300)
         result = select_samples(30, 100, 0.001)
         self.assertEqual(result["selected_samples"], MAX_TIMING_SAMPLES)
@@ -70,6 +70,17 @@ class TestDuration(unittest.TestCase):
         self.assertEqual(select_samples(30, 1, None)["selected_samples"], 30)
         with self.assertRaises(ValueError):
             select_samples(MAX_TIMING_SAMPLES + 1, None, None)
+
+    def test_five_percent_headroom_and_cap(self):
+        result = select_samples(30, 2, 1)
+        self.assertEqual(result['selected_samples'], 2100)
+        self.assertEqual(result['min_timed_seconds'], 2)
+        self.assertEqual(result['duration_headroom_factor'], 1.05)
+        self.assertEqual(result['predicted_timed_seconds'], 2.1)
+        capped = select_samples(30, 2, 0.2)
+        self.assertEqual(capped['selected_samples'], 10000)
+        self.assertTrue(capped['sample_cap_reached'])
+        self.assertEqual(select_samples(3, None, None)['selected_samples'], 3)
 
     def test_gpu_span_is_not_sum_of_operations_and_final_sync_is_preserved(self):
         calls = []

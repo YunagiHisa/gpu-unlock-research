@@ -1,0 +1,74 @@
+{
+  "kernel": "6.8.0-147-generic",
+  "nvidia_driver": "580.178.04",
+  "python": "3.12.3",
+  "pytorch": "2.11.0+cu128",
+  "pytorch_cuda_runtime": "12.8",
+  "driver_cuda_compatibility": "13.0",
+  "llama_build": 11669,
+  "llama_commit": "620d2225c",
+  "llama_build_toolkit": "12.8.61",
+  "toolkit_evidence": "Saved CMake package detection records",
+  "toolkit_record_count": 72,
+  "host_compiler": "GNU 13.3.0",
+  "gemm_commit": "9bab18fab9d986b61f90287d4eadeadf9f66c41a",
+  "identity_verified_across_phases": true,
+  "baseline_eligible": false,
+  "artifact_sha256": {
+    "Qwen3.8-27B-Q4_K_M.gguf": "c600de0300ae8a0eb3a6c0b8b5561b8b96f16bd2c863c2a66c42de29d391a747",
+    "llama-bench": "3581e6beca7417d6051409509c26639e98e5fca8d838729c05a949ecec6b89a0",
+    "libggml-cpu.so.0.27.0": "e6d5e6967ef324afa19a5a3135aeebd7e6183df806e63f4b153c0133f9d1c4ec",
+    "libllama-fit-params-impl.so": "a8d02a3f73962f38f7eb1cf3da49311b8a3b771fdbc07803a0c8dc5696b571c5",
+    "libllama-bench-impl.so": "ed3d20c378ac4b31f4163092a79b0295226128a632dd3e8fc1e3c7e0fb21a97a",
+    "libggml-cuda.so.0.27.0": "bf8ef6fa752b45284a82f27e298665fbd0747cf23da08a87fa1046c6e82d0686",
+    "libggml-base.so.0.27.0": "6a4d0502f13b807dd101f0c48c7b63c1c276a9568a12b4fbca3f524bc424ccd3",
+    "libllama-common.so.0.7.0": "79d8f6ac380eb464434f4ed5d540d8caae596fc21cc7b08d9478ff9415361738",
+    "libllama-server-impl.so": "5ce075af86bc67cda1b1ff24d664134a95e077fd6a2b6c2453b41e2fe33837fc",
+    "libllama-completion-impl.so": "34acdce13b846686a9cda329585be37f88c264b5009f5dc9749e095969a65ed7",
+    "libllama-cli-impl.so": "af1915b6520b9ad8a4bb1f2c9ae2827f6d5e1e1753f4a4375d4b05f48293425b",
+    "libggml.so.0.27.0": "e9a4c677780f187c24c0f4c939c5034e91c50ead35ef9947a18d3c37c371ecd4",
+    "libllama.so.0.7.0": "638ced8a86aa791cec42e5b9f4fdb57d0ddba06ab4c2b5c781b96bef2f0d5b45",
+    "libllama-perplexity-impl.so": "558b74360a94ccf9874144594500116632887fc485661249b55c7fd61f0a9ca9",
+    "libllama-quantize-impl.so": "98fd0f4a27bb91252d2ecbae7b01a1f95b445e3caabb5dda663105f72d72c0fb",
+    "libmtmd.so.0.7.0": "c66a0a93003661fed1dbea7a2158ce0ee39c3f9dc565652501409eaadd3e0004",
+    "libllama-batched-bench-impl.so": "3cff7a7a45a3dbb0ec7842f039ba2099ec732acc77232545b61881eb282dccfa",
+    "Qwen_Qwen3-8B-Q4_K_M.gguf": "54fffa050078e984116639c83dfb64b5aa6d4cd474e018b076777c632bbccccd",
+    "Qwen_Qwen3-8B-bf16.gguf": "3eaf8da180bdfef9b16b22c4a9460872e8dcaaf315ee7e29413c9f8baa5fe6b8"
+  },
+  "precision_controls": {
+    "fp16": {
+      "fp32_precision": "ieee",
+      "allow_fp16_accumulation": false,
+      "allow_fp16_reduced_precision_reduction": false,
+      "allow_bf16_reduced_precision_reduction": false
+    },
+    "bf16": {
+      "fp32_precision": "ieee",
+      "allow_fp16_accumulation": false,
+      "allow_fp16_reduced_precision_reduction": false,
+      "allow_bf16_reduced_precision_reduction": false
+    },
+    "tf32": {
+      "fp32_precision": "tf32",
+      "allow_fp16_accumulation": false,
+      "allow_fp16_reduced_precision_reduction": false,
+      "allow_bf16_reduced_precision_reduction": false
+    },
+    "fp32": {
+      "fp32_precision": "ieee",
+      "allow_fp16_accumulation": false,
+      "allow_fp16_reduced_precision_reduction": false,
+      "allow_bf16_reduced_precision_reduction": false
+    }
+  },
+  "packages": {
+    "torch": "2.11.0+cu128",
+    "numpy": "2.5.4",
+    "nvidia-ml-py": "13.615.71",
+    "nvidia-cublas-cu12": "12.8.4.1",
+    "nvidia-cuda-runtime-cu12": "12.8.90",
+    "nvidia-cuda-nvrtc-cu12": "12.8.93",
+    "nvidia-cudnn-cu12": "9.19.0.56",
+    "nvidia-nccl-cu12": "2.28.9"
+  }
+}
