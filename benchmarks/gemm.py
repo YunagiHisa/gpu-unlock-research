@@ -15,7 +15,7 @@ from pathlib import Path
 
 from benchmarks.core import MAX_TIMING_SAMPLES, MODES, normalized_error, operation_count, select_samples, timing_summary, validate_dimensions
 from benchmarks.evidence import load_experiment, state_evidence
-from benchmarks.metadata import cuda_pci_bus_id, cuda_uuid_bytes, environment_metadata
+from benchmarks.metadata import cuda_pci_bus_id, cuda_uuid_bytes, environment_metadata, git_metadata
 from benchmarks.telemetry import NvmlSession, Sampler, read_value
 from benchmarks.identity import IdentityMismatch, KEY_HELP
 from benchmarks.preflight import cooldown, contention_reasons
@@ -54,6 +54,8 @@ def preflight_arguments(parser):
     parser.add_argument("--requested-state", choices=("before", "after", "reverted"), required=True)
     parser.add_argument("--execution-kind", choices=("formal", "diagnostic"), default="formal",
                         help="formal enforces preparation gates but never grants baseline admission")
+    parser.add_argument("--strict-preflight", action="store_true",
+                        help="enforce the same preparation gates for diagnostic runs")
     parser.add_argument("--max-start-temp", type=positive_float, help="operator-supplied Celsius limit; no specification default")
     parser.add_argument("--cooldown-timeout-s", type=nonnegative_float, help="operator-supplied wait budget; no specification default")
 
@@ -234,7 +236,8 @@ def run(args):
             preflight_reasons.append("physical_identity_unverified")
         if not temperature["passed"]:
             preflight_reasons.append(temperature["reason"])
-        blocked = temperature["status"] == "timeout" or (args.execution_kind == "formal" and bool(preflight_reasons))
+        enforce_preflight = args.execution_kind == "formal" or getattr(args, "strict_preflight", False)
+        blocked = temperature["status"] == "timeout" or (enforce_preflight and bool(preflight_reasons))
         preflight = {"execution_kind": args.execution_kind, "temperature": temperature,
                      "processes_before_cooldown": before, "processes_at_start": ready_processes,
                      "status": "blocked" if blocked else "ready" if not preflight_reasons else "diagnostic_only",
@@ -415,6 +418,7 @@ def run_measurement(args, torch, device, dtype, precision, props, measured_pci, 
 
 def main(argv=None):
     args = parse_args(argv)
+    git_at_start = git_metadata()
     try:
         result = run(args)
     except (IdentityMismatch, ImportError, RuntimeError) as exc:
@@ -425,6 +429,7 @@ def main(argv=None):
                   "baseline_eligible": False,
                   "baseline_ineligibility_reasons": ["admission_validator_not_implemented", "physical_gpu_identity_mismatch" if mismatch else "measurement_unavailable"],
                   "requested_state": args.requested_state, "verification_status": "unconfirmed", "initial_state_confidence": "unknown"}
+    result["benchmark_git"] = git_at_start
     pseudonym = result.get("device", {}).get("pseudonym", {})
     if pseudonym.get("reason", "").startswith("key_"):
         print(KEY_HELP, file=sys.stderr)

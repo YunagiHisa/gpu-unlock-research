@@ -64,7 +64,10 @@ def git_metadata():
             raise ValueError("git unavailable")
         return proc.stdout.strip()
     try:
-        return {"commit": query("rev-parse", "HEAD"), "dirty": bool(query("status", "--porcelain", "--untracked-files=normal"))}
+        return {"commit": query("rev-parse", "HEAD"),
+                "dirty": bool(query("status", "--porcelain", "--untracked-files=normal")),
+                "tracked_dirty": bool(query("status", "--porcelain", "--untracked-files=no")),
+                "untracked_files": query("ls-files", "--others", "--exclude-standard").splitlines()}
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return {"commit": None, "dirty": None}
 

@@ -59,3 +59,33 @@ state or isolation. Guest reboots may not reset passthrough GPUs. See the
 - [Current design and output](docs/telemetry-metadata.md)
 - [Historical verification](https://github.com/YunagiHisa/gpu-unlock-research/pull/3#issuecomment-6412810816)
 - [Cooling and precision research records](https://github.com/YunagiHisa/gpu-unlock-research/pull/3#issuecomment-6415089744)
+
+## Benchmark Results
+
+A Before → After → Reverted diagnostic experiment tested GPU-Unlock 2.0.0 on
+two RTX 3060 12 GB GPUs under Proxmox PCI passthrough, using kernel
+6.8.0-147-generic throughout. FP16, BF16 and TF32 GEMM improved substantially.
+**BF16 GEMM improved by 65–81% across the tested configurations, reaching
+approximately 80% at 8192³.** FP32 IEEE changes were very small and negative
+(−0.24% to −0.01%), rather than exactly zero.
+
+Qwen3-8B BF16 pp512 improved **16.31%**; Q4_K_M prefill and token generation
+showed limited effects. Reverted measurements returned close to Before.
+See the [full report, comparison data and figures](docs/gpu-unlock-benchmark.md)
+for all 24 GEMM configurations, seven llama.cpp conditions, process SDs,
+power/clock observations and limitations.
+
+This is one host and two GPUs, with one session per phase; the original
+`baseline_eligible=false` status remains unchanged. GPU-Unlock is unofficial,
+changes GPU firmware/hardware state and carries risk; these results do not
+guarantee safety or general applicability.
+
+### Reproducing GEMM measurements
+
+Measurements were performed using commit `9bab18f`. The published source is
+based on that snapshot, with only the default Python interpreter path adjusted
+for portability. The launcher defaults to `python3`; this does not automatically
+select the original measurement environment. Activate a measurement venv with
+the recorded dependencies, or set `PYTHON` to its interpreter before running
+`scripts/run-before-gemm.sh`. See the [report](docs/gpu-unlock-benchmark.md) for
+recorded versions, precision controls, run order and diagnostic limitations.

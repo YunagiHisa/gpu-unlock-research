@@ -135,19 +135,19 @@ class TestIntegration(unittest.TestCase):
         result, _ = self.run_fake([0.0001, 0.0001], min_seconds=1)
         plan = result["timed_measurement"]
         self.assertEqual(plan["estimated_gemm_ms"], 10)
-        self.assertEqual(plan["selected_samples"], 100)
-        self.assertEqual(plan["predicted_timed_seconds"], 1)
-        self.assertEqual(plan["gpu_span_seconds"], 0.1)
+        self.assertEqual(plan["selected_samples"], 105)
+        self.assertEqual(plan["predicted_timed_seconds"], 1.05)
+        self.assertEqual(plan["gpu_span_seconds"], 0.105)
         self.assertFalse(plan["target_met"])
         self.assertEqual(result["status"], "duration_target_not_met")
-        self.assertEqual(len(result["timings_ms"]), 100)
+        self.assertEqual(len(result["timings_ms"]), 105)
         self.assertIn("requested_timed_duration_not_met", result["baseline_ineligibility_reasons"])
 
     def test_underestimate_preserves_longer_actual_span(self):
         result, calls = self.run_fake([0.0001, 0.0001], min_seconds=1, estimate_ms=0.5)
         plan = result["timed_measurement"]
-        self.assertEqual(plan["selected_samples"], 2000)
-        self.assertEqual(plan["gpu_span_seconds"], 2)
+        self.assertEqual(plan["selected_samples"], 2100)
+        self.assertEqual(plan["gpu_span_seconds"], 2.1)
         self.assertTrue(plan["target_met"])
         self.assertEqual(calls.count("timing"), 1)
 
@@ -161,15 +161,26 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(calls.count("timing"), 1)
 
     def test_target_equality_passes_but_any_shortfall_fails(self):
-        exact, _ = self.run_fake([0.0001, 0.0001], min_seconds=1, estimate_ms=1)
+        exact_ms = 1000 / 1050
+        exact, _ = self.run_fake([0.0001, 0.0001], min_seconds=1, estimate_ms=1, actual_ms=exact_ms)
         self.assertTrue(exact["timed_measurement"]["target_met"])
-        short, _ = self.run_fake([0.0001, 0.0001], min_seconds=1, estimate_ms=1, actual_ms=0.9999999999)
+        short, _ = self.run_fake([0.0001, 0.0001], min_seconds=1, estimate_ms=1, actual_ms=exact_ms - 1e-10)
         self.assertFalse(short["timed_measurement"]["target_met"])
 
     def test_duration_failure_exit_code(self):
         result, _ = self.run_fake([0.0001, 0.0001], min_seconds=1)
         with patch.object(gemm, "run", return_value=result), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(gemm.main(["--gpu", "0", "--requested-state", "before", "--mode", "fp16"]), 7)
+
+    def test_success_and_failure_json_include_git_at_start(self):
+        git = dict(commit='a'*40, dirty=True, tracked_dirty=False, untracked_files=['notes.txt'])
+        for returned in ({'status':'draft_validated','baseline_eligible':False}, RuntimeError('CUDA failure')):
+            output = io.StringIO()
+            options = {'side_effect': returned} if isinstance(returned, Exception) else {'return_value': returned}
+            with patch.object(gemm, 'run', **options), patch.object(gemm, 'git_metadata', return_value=git), \
+                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+                gemm.main(['--gpu','0','--requested-state','before','--mode','fp16'])
+            self.assertEqual(json.loads(output.getvalue())['benchmark_git'], git)
 
     def test_current_draft_uses_canonical_evidence_and_phase_statistics(self):
         result, _ = self.run_fake([0.0001, 0.0001])
